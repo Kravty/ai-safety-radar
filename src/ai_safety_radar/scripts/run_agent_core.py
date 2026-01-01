@@ -12,6 +12,29 @@ from ai_safety_radar.models.raw_document import RawDocument
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+async def listen_for_triggers(redis_client, process_callback):
+    """Listens for manual processing triggers via Redis PubSub."""
+    pubsub = redis_client.client.pubsub()
+    await pubsub.subscribe("agent:trigger")
+    logger.info("Listening for manual triggers on 'agent:trigger'...")
+    
+    async for message in pubsub.listen():
+        if message["type"] == "message":
+            logger.info("⚡ Manual trigger received, processing batch...")
+             # We can't await the callback directly if it's the main loop, 
+             # but here we just want to wake up or ensure processing happens.
+             # Actually, the main loop is polling. 
+             # For a blocking list pop, we'd need to interrupt.
+             # For xreadgroup with block, we just wait.
+             # Since we are using a loop with timeout, this might just log.
+             # But let's act on it: we can try to process one batch immediately.
+            try:
+                await process_callback(manual=True)
+            except Exception as e:
+                logger.error(f"Manual trigger processing failed: {e}")
+
+
+
 async def run_agent_core() -> None:
     load_dotenv()
     
@@ -30,12 +53,18 @@ async def run_agent_core() -> None:
     
     logger.info(f"Listening for jobs in 'papers:pending' as {CONSUMER_GROUP}...")
     
-    while True:
+    # Define processing logic to be reusable
+    async def process_batch(manual=False):
         try:
-            # Read new jobs
-            jobs = await redis_client.read_jobs("papers:pending", CONSUMER_GROUP, CONSUMER_NAME, count=1, block=5000)
-            
-            for msg_id, payload in jobs:
+             # Block less usage if manual
+             block_time = 1000 if manual else 5000
+             jobs = await redis_client.read_jobs("papers:pending", CONSUMER_GROUP, CONSUMER_NAME, count=1, block=block_time)
+             
+             if not jobs and not manual:
+                 # Just return, outer loop continues
+                 return
+
+             for msg_id, payload in jobs:
                 try:
                     forensic.log_event("JOB_RECEIVED", "INFO", details={"msg_id": msg_id})
                     
@@ -45,16 +74,9 @@ async def run_agent_core() -> None:
                     # Run Analysis Workflow (Phase 2 logic)
                     forensic.log_event("ANALYSIS_START", "INFO", input_text=doc.content[:100], details={"doc_id": doc.id})
                     
-                    # IngestionGraph.run() sets state but doesn't return the signature directly.
-                    # We need to modify IngestionGraph to allow retrieving the result or getting it from state.
-                    # Actually IngestionGraph.run() is simpler. Let's look at IngestionGraph implementation.
-                    # It calls self.workflow.invoke(initial_state).
-                    # Invocation returns the final state.
-                    # So we should modify IngestionGraph.run to return the state OR use invoke directly here.
-                    # Let's use invoke directly to access the result.
-                    
+                    # FIX: Use ainvoke for async graph execution
                     initial_state = {"doc": doc, "is_relevant": False, "threat_signature": None}
-                    final_state = await ingestion_graph.workflow.invoke(initial_state)
+                    final_state = await ingestion_graph.workflow.ainvoke(initial_state)
                     
                     threat_sig = final_state.get("threat_signature")
                     
@@ -66,23 +88,37 @@ async def run_agent_core() -> None:
                              
                         await redis_client.add_job("papers:analyzed", result_payload)
                         forensic.log_event("THREAT_DETECTED", "WARN", details={"threat_id": threat_sig.title, "severity": threat_sig.severity})
-                        logger.info(f"Threat detected: {threat_sig.title}")
+                        logger.info(f"✅ Threat detected: {threat_sig.title}")
                     else:
                         forensic.log_event("ANALYSIS_COMPLETE", "INFO", details={"result": "No threat or Irrelevant"})
+                        logger.info(f"Analysis complete (Irrelevant): {doc.id}")
                         
                     # Ack
-                    await redis_client.ack_job("papers:pending", CONSUMER_GROUP, msg_id)
+                    await redis_client.client.xack("papers:pending", CONSUMER_GROUP, msg_id)
                     
                 except Exception as e:
-                    logger.error(f"Error processing job {msg_id}: {e}")
+                    logger.error(f"❌ Error processing job {msg_id}: {e}")
                     forensic.log_event("JOB_ERROR", "ERROR", details={"error": str(e), "msg_id": msg_id})
                     # We ack even on error to avoid poison pill loop since we don't have DLQ
-                    await redis_client.ack_job("papers:pending", CONSUMER_GROUP, msg_id)
+                    await redis_client.client.xack("papers:pending", CONSUMER_GROUP, msg_id)
+        except Exception as e:
+             if manual: raise e # Propagate if manual
+             # Otherwise log and continue
+             logger.error(f"Batch processing error: {e}")
+
+    # Start PubSub listener in background
+    asyncio.create_task(listen_for_triggers(redis_client, process_batch))
+
+    while True:
+        try:
+            await process_batch()
+            # Small sleep to prevent tight loop if not blocking or if error
+            await asyncio.sleep(0.1)
                     
         except asyncio.CancelledError:
             break
         except Exception as e:
-            logger.error(f"Redis loop error: {e}")
+            logger.error(f"⚠️ Redis loop error: {e}")
             await asyncio.sleep(5) # Backoff
             
     await redis_client.close()

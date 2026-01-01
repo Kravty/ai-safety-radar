@@ -61,6 +61,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://ollama:11434
       - LLM_PROVIDER=ollama
+      - LLM_MODEL=ministral-3:14b
       - LOG_LEVEL=INFO
       # No API Keys needed as it uses Ollama or local tools
     volumes:
@@ -85,7 +86,8 @@ services:
       - internal_msg_net
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - LLM_PROVIDER=ollama # Not used directly but good for config consistency
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=ministral-3:14b # Not used directly but good for config consistency
     volumes:
       - ./logs:/app/logs:ro # Read-only access to logs
       - ./src:/app/src:ro
