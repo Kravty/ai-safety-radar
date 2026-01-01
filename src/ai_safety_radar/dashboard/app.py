@@ -74,7 +74,37 @@ tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "🗂️ Threat Catalog", "�
 with tab1:
     st.header("Threat Landscape Overview")
     
+    # Manual Controls
+    st.subheader("🔧 Manual Controls")
+
+    col_ctrl1, col_ctrl2 = st.columns(2)
+
+    with col_ctrl1:
+        if st.button("⚡ Trigger Processing", type="primary"):
+            # Send signal to agent_core to process one batch
+            if r_client:
+                r_client.publish("agent:trigger", "process_batch")
+                st.success("Processing triggered! Check Agent Core logs.")
+            else:
+                 st.error("Redis disconnected.")
+
+    with col_ctrl2:
+        if st.button("🔄 Reset Consumer Group"):
+            # Reset stuck consumer group
+            if r_client:
+                try:
+                    r_client.xgroup_destroy("papers:pending", "agent_group")
+                    r_client.xgroup_create("papers:pending", "agent_group", id="0", mkstream=True)
+                    st.success("Consumer group reset!")
+                except Exception as e:
+                    st.error(f"Error resetting group: {e}")
+            else:
+                 st.error("Redis disconnected.")
+                 
+    st.markdown("---")
+
     # KPIs
+    st.header("Threat Landscape Overview")
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Threats Detected", len(analyzed_threats))
     col2.metric("Pending Ingestion", len(pending_papers))
