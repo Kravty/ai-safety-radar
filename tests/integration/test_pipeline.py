@@ -7,6 +7,7 @@ from ai_safety_radar.utils.redis_client import RedisClient
 from ai_safety_radar.orchestration.ingestion_graph import IngestionGraph
 import json
 import fakeredis.aioredis
+from datetime import datetime
 
 # Mock agents to avoid actual LLM calls
 class MockIngestionGraph:
@@ -16,13 +17,20 @@ class MockIngestionGraph:
         sig = ThreatSignature(
             title=f"Analyzed: {doc.title}",
             description="Mock analysis",
-            severity="High",
+            severity=5,
             affected_models=["GPT-4"],
             attack_vector="Prompt Injection",
             technical_details="Details...",
             mitigation="Sanitize inputs",
             published_date=doc.published_date,
-            source_url=doc.source_url
+            url=doc.url,
+            # Fill missing fields required by ThreatSignature
+            relevance_score=1.0,
+            attack_type="Jailbreak", 
+            modality=["Text"],
+            is_theoretical=False,
+            summary_tldr="TLDR",
+            source=doc.source
         )
         return {"threat_signature": sig}
 
@@ -49,11 +57,11 @@ async def test_end_to_end_pipeline_flow(mock_redis):
         doc = RawDocument(
             id="test:1",
             title="Test Paper",
-            abstract="Abstract...",
-            content="Content...",
-            authors=["Alice"],
-            published_date="2023-01-01",
-            source_url="http://arxiv.org/1"
+            content="Abstract: Abstract...\nContent...",
+            url="http://arxiv.org/1",
+            source="test",
+            published_date=datetime(2023, 1, 1),
+            metadata={"authors": ["Alice"]}
         )
         
         # Manually push to pending (simulating ingestion_service)
@@ -78,13 +86,20 @@ async def test_end_to_end_pipeline_flow(mock_redis):
         sig = ThreatSignature(
             title=f"Analyzed: {doc_received.title}",
             description="Mock analysis",
-            severity="High",
+            severity=5,
             affected_models=["GPT-4"],
             attack_vector="Prompt Injection",
             technical_details="Details...",
             mitigation="Sanitize inputs",
             published_date=doc_received.published_date,
-            source_url=doc_received.source_url
+            url=doc_received.url,
+            # Fill missing fields
+            relevance_score=1.0,
+            attack_type="Jailbreak", 
+            modality=["Text"],
+            is_theoretical=False,
+            summary_tldr="TLDR",
+            source=doc_received.source
         )
         
         # Push to analyzed (simulating agent_core)
@@ -97,7 +112,7 @@ async def test_end_to_end_pipeline_flow(mock_redis):
         analyzed = await redis_client.read_jobs("papers:analyzed", "group2", "consumer2", count=1)
         assert len(analyzed) == 1
         a_msg_id, a_payload = analyzed[0]
-        assert a_payload["severity"] == "High"
+        assert a_payload["severity"] == 5
         assert a_payload["title"] == "Analyzed: Test Paper"
         
         await redis_client.close()
