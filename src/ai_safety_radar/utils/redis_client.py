@@ -26,7 +26,7 @@ class RedisClient:
             await self.connect()
             
         # Wrap payload in 'data' field as JSON string
-        data_str = json.dumps(payload)
+        data_str = json.dumps(payload, default=str)
         
         # Redis client type hint is incomplete for xadd, ignore it or cast
         cl = cast(redis.Redis, self.client)
@@ -45,7 +45,7 @@ class RedisClient:
             
         # Ensure group exists
         try:
-            await cl.xgroup_create(queue_name, consumer_group, mkstream=True)
+            await cl.xgroup_create(queue_name, consumer_group, id="0", mkstream=True)
         except redis.ResponseError as e:
             if "BUSYGROUP" not in str(e):
                 raise

@@ -28,7 +28,7 @@ class ArXivIngester(BaseIngester):
     
     async def fetch_recent(
         self,
-        days_back: int = 7,
+        days_back: int = 30,
         max_results: int | None = None
     ) -> AsyncIterator[RawDocument]:
         """
