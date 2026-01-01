@@ -26,6 +26,13 @@ services:
       - internal_model_net
     volumes:
       - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   ingestion_service:
     build: .
