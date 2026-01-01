@@ -1,10 +1,10 @@
 # AI Safety Radar - Project State
 
-**Last Updated:** 2026-01-01 16:45
+**Last Updated:** 2026-01-01 17:50 CET
 **Current Phase:** Phase 4 - Intelligence Dashboard
-**Completion:** 90% Complete
+**Completion:** 95% Complete
 **Branch:** main
-**Last Commit:** [Pending Init]
+**Last Commit:** [Pending Update]
 
 ***
 
@@ -26,14 +26,14 @@
 - [x] README automation (`update_readme.py`)
 
 ### 🚧 In Progress
-- [ ] Verification of `test_results.json` integration in live environment
-- [ ] Full end-to-end user acceptance testing (manual)
+- [ ] MATS Portfolio document creation
+- [ ] End-to-end demo recording
+- [ ] Final polish and bug fixes
 
 ### 🎯 Next Steps (Priority Order)
-1. Verify `test_results.json` generation via cron/scheduled task (currently manual).
-2. Run full stack demo for MATS verification.
-3. Optimize Redis connection pooling if latency is observed.
-4. Finalize MATS_PORTFOLIO.md details.
+1. Monitor GPU usage and Dashboard data population.
+2. Create MATS_PORTFOLIO.md.
+3. Record demo video.
 
 ***
 
@@ -126,6 +126,9 @@ graph TB
 - ✅ ModuleNotFoundError in Docker build (Fixed via `uv sync --frozen`).
 - ✅ Ollama Port Conflict (Fixed by removing host binding).
 - ✅ Agent Air-gap (Verified by tests).
+- ✅ ArXiv date filter too restrictive → Fixed by extending to 30 days
+- ✅ Redis datetime serialization error → Fixed with ISO string conversion
+- ✅ Integration test schema mismatches → Fixed field names and types
 
 ***
 

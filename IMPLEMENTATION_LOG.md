@@ -103,3 +103,39 @@
 **Decision:** Establish local git version control and living documentation (`IMPLEMENTATION_LOG.md`).
 **Rationale:** Need valid version control for project tracking and potential handover.
 **Result:** ✅ Success
+
+## [2026-01-01 17:00] - arxiv-date-filter-fix
+
+**Decision:** Relaxed ArXiv date filtering from 7 days to 30 days.
+**Rationale:** Original 1-week window yielded 0 papers matching security query terms. 30-day window ensures sufficient data for demo.
+**Issues Encountered:** Initial ingestion returned "Reached date limit, stopping ingestion. Queued 0 papers."
+**Resolution:** Modified `src/ai_safety_radar/ingestion/arxiv.py` to extend date range.
+**Result:** ✅ Success. Redis queue now contains 7 papers.
+**Code Locations:** `src/ai_safety_radar/ingestion/arxiv.py:78`
+**Lessons Learned:** Demo data requirements should inform filtering parameters, not arbitrary defaults.
+
+## [2026-01-01 17:15] - redis-datetime-serialization
+
+**Decision:** Added datetime serialization handling in RedisClient.
+**Issues Encountered:** Ingestion Service crashed with "Object of type datetime is not JSON serializable" when enqueueing papers.
+**Resolution:** Modified `enqueue_document()` to convert datetime objects to ISO strings before JSON serialization.
+**Result:** ✅ Success. Ingestion Service no longer crashes.
+**Code Locations:** `src/ai_safety_radar/utils/redis_client.py:45`
+**Lessons Learned:** Always handle type coercion at serialization boundaries when working with Redis/JSON.
+
+## [2026-01-01 17:30] - integration-test-schema-fix
+
+**Decision:** Fixed RawDocument schema mismatches in integration test.
+**Issues Encountered:** Test failed with validation errors (missing `url` and `source` fields, incorrect `severity` type).
+**Resolution:** Updated test to use correct field names (`url` not `source_url`) and proper enum types.
+**Result:** ✅ Success. Test now passes.
+**Code Locations:** `tests/integration/test_pipeline.py:49`
+**Lessons Learned:** Integration tests must mirror actual model schemas exactly - use IDE autocomplete or import actual model classes.
+
+## [2026-01-01 17:45] - live-development-workflow
+
+**Decision:** Added volume mounts for `./src` and `./tests` in docker-compose.yml.
+**Rationale:** Enable hot-reload development without rebuilding containers on every code change.
+**Result:** ✅ Success. Local edits now apply immediately to running containers.
+**Code Locations:** `docker-compose.yml`
+**Lessons Learned:** Development velocity increases significantly with live reload during debugging cycles.
