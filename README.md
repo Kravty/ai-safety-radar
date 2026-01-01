@@ -34,7 +34,7 @@ _No data yet._
 ### Prerequisites
 - Python 3.11+
 - [uv](https://github.com/astral-sh/uv) (Package Manager)
-- Docker & Docker Compose (optional for full deployment)
+- **Container Runtime**: Docker or [Podman](https://podman.io/) (with `podman-compose`)
 
 ### Installation
 
@@ -87,12 +87,14 @@ docker-compose up --build
 ```
 Access the **Intelligence Dashboard** at `http://localhost:8501`.
 
-## 🐳 Docker Deployment
+## 🐳 Container Deployment (Docker/Podman)
 
-To run the full stack including a local Ollama instance:
+To run the full stack (replace `docker-compose` with `podman-compose` if using Podman):
 
 ```bash
 docker-compose up --build
+# OR
+podman-compose up --build
 ```
 
 ## 🛡️ Security Architecture
@@ -105,21 +107,21 @@ The system uses a decoupled architecture to ensure the **Agent Core** (which exe
 ```mermaid
 graph TD
     subgraph Public["Public Network"]
-        ArXiv[ArXiv API]
+        ArXiv["ArXiv API"]
     end
 
     subgraph "Ingestion Zone (Public IO)"
-        Ingestion[Ingestion Service]
+        Ingestion["Ingestion Service"]
         Ingestion -->|1. Fetch| ArXiv
     end
 
     subgraph "Internal Message Bus (No Internet)"
-        Redis[(Redis Streams)]
+        Redis[("Redis Streams")]
     end
 
     subgraph "Secure Enclave (Air-Gapped)"
-        Agent[Agent Core]
-        Ollama[Ollama LLM]
+        Agent["Agent Core"]
+        Ollama["Ollama LLM"]
         
         Agent -->|2. Pull Job| Redis
         Agent -->|3. Inference| Ollama
