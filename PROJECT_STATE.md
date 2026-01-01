@@ -1,8 +1,8 @@
 # AI Safety Radar - Project State
 
-**Last Updated:** 2026-01-01 17:50 CET
+**Last Updated:** 2026-01-01 17:55 CET
 **Current Phase:** Phase 4 - Intelligence Dashboard
-**Completion:** 95% Complete
+**Completion:** 97% Complete
 **Branch:** main
 **Last Commit:** [Pending Update]
 
@@ -24,6 +24,8 @@
 - [x] Dashboard Security Status
 - [x] Integration tests (`fakeredis`)
 - [x] README automation (`update_readme.py`)
+- [x] Agent Core processing workflow (fixed & robust)
+- [x] Dashboard manual controls for debugging
 
 ### 🚧 In Progress
 - [ ] MATS Portfolio document creation
@@ -129,6 +131,7 @@ graph TB
 - ✅ ArXiv date filter too restrictive → Fixed by extending to 30 days
 - ✅ Redis datetime serialization error → Fixed with ISO string conversion
 - ✅ Integration test schema mismatches → Fixed field names and types
+- ✅ Agent Core silent failure → Fixed with `ainvoke`, robust loop, and correct model config
 
 ***
 

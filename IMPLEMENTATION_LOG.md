@@ -139,3 +139,21 @@
 **Result:** ✅ Success. Local edits now apply immediately to running containers.
 **Code Locations:** `docker-compose.yml`
 **Lessons Learned:** Development velocity increases significantly with live reload during debugging cycles.
+
+## [2026-01-01 17:50] - agent-core-processing-fix
+
+**Issue Encountered:** Agent Core listening but not processing 21 queued papers. Silent failure in workflow due to sync `invoke` on async graph and API key error (wrong model).
+**Root Causes:**
+1. `ingestion_graph` used synchronous `invoke()` which failed on async nodes.
+2. `gpt-4o-mini` selected by default for Ollama provider, causing API key error.
+3. No manual override for debugging.
+**Resolution:**
+- Changed to `await workflow.ainvoke()`.
+- Updated `docker-compose.yml` to force `LLM_MODEL=ministral-3:14b`.
+- Added comprehensive error handling to processing loop.
+- Implemented manual trigger button in dashboard and Redis PubSub listener.
+**Result:** ✅ Success. Papers now process through full workflow locally.
+**Code Locations:**
+- `src/ai_safety_radar/scripts/run_agent_core.py`
+- `src/ai_safety_radar/dashboard/app.py`
+**Lessons Learned:** Silent failures in async loops require explicit error logging at every stage. Local LLMs need explicit configuration to avoid defaulting to cloud API logic.
