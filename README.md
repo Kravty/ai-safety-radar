@@ -115,6 +115,16 @@ graph TD
         Ingestion -->|1. Fetch| ArXiv
     end
 
+```mermaid
+graph TD
+    subgraph Public["Public Network"]
+        ArXiv["ArXiv API"]
+    end
+
+    subgraph "Ingestion Zone (Public IO)"
+        Ingestion["Ingestion Service"]
+    end
+
     subgraph "Internal Message Bus (No Internet)"
         Redis[("Redis Streams")]
     end
@@ -122,13 +132,14 @@ graph TD
     subgraph "Secure Enclave (Air-Gapped)"
         Agent["Agent Core"]
         Ollama["Ollama LLM"]
-        
-        Agent -->|2. Pull Job| Redis
-        Agent -->|3. Inference| Ollama
-        Agent -->|4. Push Result| Redis
     end
 
-    Ingestion -.->|Push Job| Redis
+    %% Data Flow Sequence
+    Ingestion -- "1. Fetch Papers" --> ArXiv
+    Ingestion -- "2. Push Job" --> Redis
+    Redis -- "3. Pull Job" --> Agent
+    Agent -- "4. Inference" --> Ollama
+    Agent -- "5. Push Result" --> Redis
 ```
 
 - **Forensic Logging**: All prompts are hashed (SHA256) and logged to `audit.jsonl` for post-event analysis.
