@@ -1,0 +1,92 @@
+version: '3.8'
+
+networks:
+  public_io_net:
+    driver: bridge
+  internal_msg_net:
+    driver: bridge
+    internal: true
+  internal_model_net:
+    driver: bridge
+    internal: true
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    networks:
+      - internal_msg_net
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    networks:
+      - internal_model_net
+    volumes:
+      - ollama_data:/root/.ollama
+
+  ingestion_service:
+    build: .
+    command: python -m ai_safety_radar.scripts.run_ingestion_service
+    networks:
+      - public_io_net
+      - internal_msg_net
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://ollama:11434 # Not used but env var safety
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai} # Used for logging config or shared config
+      - ARXIV_MAX_RESULTS=${ARXIV_MAX_RESULTS:-10}
+      - OPENAI_API_KEY=${OPENAI_API_KEY} 
+    volumes:
+      - ./logs:/app/logs:rw
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - redis
+
+  agent_core:
+    build: .
+    command: python -m ai_safety_radar.scripts.run_agent_core
+    networks:
+      - internal_msg_net
+      - internal_model_net
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_PROVIDER=ollama
+      - LOG_LEVEL=INFO
+      # No API Keys needed as it uses Ollama or local tools
+    volumes:
+      - ./logs:/app/logs:rw
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - redis
+      - ollama
+
+  dashboard:
+    build: .
+    command: streamlit run src/ai_safety_radar/dashboard/app.py
+    ports:
+      - "8501:8501"
+    networks:
+      - internal_msg_net
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - LLM_PROVIDER=ollama # Not used directly but good for config consistency
+    volumes:
+      - ./logs:/app/logs:ro # Read-only access to logs
+    depends_on:
+      - redis
+
+volumes:
+  ollama_data:
+  redis_data:

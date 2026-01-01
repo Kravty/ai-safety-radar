@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+*.egg-info/
+
+# Logs
+logs/*.log
+logs/*.jsonl
+logs/test_results.json
+
+# Temporary files
+.pytest_cache/
+.mypy_cache/
+*.swp
+*.swo
+.ruff_cache/
+
+# Environment
+.env
+.env.local
+
+# Podman/Docker volumes
+*_data/
+
+# IDE
+.vscode/
+.idea/
+
+# Local Dev
+.ipynb_checkpoints/
