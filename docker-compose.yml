@@ -41,6 +41,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY} 
     volumes:
       - ./logs:/app/logs:rw
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
     user: "1000:1000"
     cap_drop:
       - ALL
@@ -63,6 +65,8 @@ services:
       # No API Keys needed as it uses Ollama or local tools
     volumes:
       - ./logs:/app/logs:rw
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
     user: "1000:1000"
     cap_drop:
       - ALL
@@ -84,6 +88,8 @@ services:
       - LLM_PROVIDER=ollama # Not used directly but good for config consistency
     volumes:
       - ./logs:/app/logs:ro # Read-only access to logs
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
     depends_on:
       - redis
 
