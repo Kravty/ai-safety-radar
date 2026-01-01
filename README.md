@@ -22,6 +22,12 @@ _No data yet._
   - **Cloud**: Uses OpenAI GPT-4o for high precision.
   - **Local (Jetson)**: Uses Ollama (Llama 3 / Mistral) for privacy and edge deployment.
 - **Morden Stack**: Built with `langgraph`, `pydantic v2`, and `uv`.
+- **Intelligence Dashboard**: Real-time Streamlit UI for threat monitoring and security status.
+- **Forensic & Automated Docs**: Zero-trust audit logging and self-updating documentation.
+
+## 📚 Documentation
+- [MATS Portfolio](docs/MATS_PORTFOLIO.md): Detailed architecture, decisions, and future roadmap.
+- [Threat Model](docs/THREAT_MODEL.md): Security boundaries and experimental safety protocols.
 
 ## 🚀 Getting Started
 
