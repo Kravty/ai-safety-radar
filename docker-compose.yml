@@ -20,19 +20,17 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
-  ollama:
-    image: ollama/ollama:latest
-    networks:
-      - internal_model_net
-    volumes:
-      - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+#  ollama:
+#    image: ollama/ollama:latest
+#    networks:
+#      - internal_model_net
+#    volumes:
+#      - ollama_data:/root/.ollama
+#    # Env vars to trigger NVIDIA hook
+#    environment:
+#      - NVIDIA_VISIBLE_DEVICES=all
+#      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+#    privileged: true
 
   ingestion_service:
     build: .
@@ -42,8 +40,9 @@ services:
       - internal_msg_net
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - OLLAMA_BASE_URL=http://ollama:11434 # Not used but env var safety
-      - LLM_PROVIDER=${LLM_PROVIDER:-openai} # Used for logging config or shared config
+      - OLLAMA_BASE_URL=http://192.168.1.37:11434
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - LLM_MODEL=ministral-3:8b
       - ARXIV_MAX_RESULTS=${ARXIV_MAX_RESULTS:-10}
       - OPENAI_API_KEY=${OPENAI_API_KEY} 
     volumes:
@@ -63,12 +62,13 @@ services:
     command: python -m ai_safety_radar.scripts.run_agent_core
     networks:
       - internal_msg_net
-      - internal_model_net
+      - public_io_net
+      # - internal_model_net
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=http://192.168.1.37:11434
       - LLM_PROVIDER=ollama
-      - LLM_MODEL=ministral-3:14b
+      - LLM_MODEL=ministral-3:8b
       - LOG_LEVEL=INFO
       # No API Keys needed as it uses Ollama or local tools
     volumes:
@@ -82,7 +82,7 @@ services:
       - no-new-privileges:true
     depends_on:
       - redis
-      - ollama
+      # - ollama
 
   dashboard:
     build: .
@@ -94,7 +94,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - LLM_PROVIDER=ollama
-      - LLM_MODEL=ministral-3:14b # Not used directly but good for config consistency
+      - LLM_MODEL=ministral-3:8b # Not used directly but good for config consistency
     volumes:
       - ./logs:/app/logs:ro # Read-only access to logs
       - ./src:/app/src:ro
