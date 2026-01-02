@@ -1,6 +1,6 @@
 # AI Safety Radar - Project State
 
-**Last Updated:** 2026-01-01 17:55 CET
+**Last Updated:** 2026-01-02 12:40 CET
 **Current Phase:** Phase 4 - Intelligence Dashboard
 **Completion:** 97% Complete
 **Branch:** main
@@ -82,30 +82,29 @@ podman-compose exec ingestion_service python -m ai_safety_radar.scripts.update_r
 
 ```mermaid
 graph TB
-    subgraph "Public Network"
-        Internet[Internet/ArXiv]
-    end
-    
-    subgraph "Internal Message Network"
-        Ingestion[Ingestion Service]
-        Redis[(Redis Queue)]
-        Dashboard[Dashboard]
-    end
-
-    subgraph "Secure Enclave (No Internet)"
+    subgraph "Dev Machine (Podman)"
         Agent[Agent Core]
-        Ollama[Ollama LLM]
+        Redis[(Redis)]
+        Dash[Dashboard]
+        Ingest[Ingestion]
     end
     
-    Internet -->|HTTPS| Ingestion
-    Ingestion -->|Enqueue Papers| Redis
-    Redis <-->|Process Jobs| Agent
-    Agent -->|Inference| Ollama
-    Dashboard -->|Read Stats| Redis
+    subgraph "Jetson AGX Orin @ 192.168.1.37"
+        Ollama[Ollama Native<br/>ministral-3:8b<br/>GPU: 64GB]
+    end
     
-    style Agent fill:#ff6b6b
-    style Dashboard fill:#4ecdc4
+    Internet[ArXiv] -->|Papers| Ingest
+    Ingest -->|Queue| Redis
+    Redis -->|Dequeue| Agent
+    Agent -->|HTTP| Ollama
+    Ollama -->|Inference| Agent
+    Agent -->|Results| Redis
+    Dash -->|Visualize| Redis
 ```
+
+**Hardware:**
+- Dev Machine: Container orchestration, data flow
+- Jetson AGX Orin: GPU inference (8B model, ~25-35 tok/sec)
 
 **Security Boundaries:**
 - **Agent Core**: No internet access (`internal_msg` + `internal_model` only).

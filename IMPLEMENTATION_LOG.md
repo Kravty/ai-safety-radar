@@ -157,3 +157,22 @@
 - `src/ai_safety_radar/scripts/run_agent_core.py`
 - `src/ai_safety_radar/dashboard/app.py`
 **Lessons Learned:** Silent failures in async loops require explicit error logging at every stage. Local LLMs need explicit configuration to avoid defaulting to cloud API logic.
+
+## [2026-01-02 12:35] - jetson-remote-inference
+
+**Decision:** Migrated from local Ollama container to remote Jetson AGX Orin deployment
+**Rationale:** 
+- Jetson has 64GB unified memory for GPU inference
+- Native Ollama install avoids container GPU passthrough complexity
+- Ministral-3:8B optimized for edge hardware like Jetson
+- Frees local machine resources for development
+**Architecture Change:**
+- Removed ollama service from docker-compose.yml
+- Changed OLLAMA_BASE_URL to http://192.168.1.37:11434
+- Switched model from ministral-3:14b to ministral-3:8b
+- Removed internal_model_net from agent_core (uses host network to reach Jetson)
+**Issues Encountered:** None (pending verification)
+**Resolution:** Configuration updated, awaiting end-to-end test
+**Result:** ⏳ Testing in progress
+**Code Locations:** `docker-compose.yml:45, 78`
+**Lessons Learned:** Remote inference servers simplify GPU management and enable hardware specialization (dev on workstation, inference on edge device).
