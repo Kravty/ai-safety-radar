@@ -1,16 +1,75 @@
 import asyncio
 import logging
 import os
+import json
 from dotenv import load_dotenv
 
 from ai_safety_radar.utils.redis_client import RedisClient
 from ai_safety_radar.utils.logging import ForensicLogger
 from ai_safety_radar.orchestration.ingestion_graph import IngestionGraph
 from ai_safety_radar.models.raw_document import RawDocument
+from ai_safety_radar.models.threat_signature import ThreatSignature
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+async def run_curator_workflow(redis_client):
+    """Generate threat landscape summary from analyzed papers."""
+    logger.info("Running CuratorAgent to synthesize threat intelligence...")
+    
+    # Read last 20 analyzed papers from Redis
+    messages = await redis_client.client.xrevrange("papers:analyzed", count=20)
+    
+    if not messages:
+        logger.warning("No analyzed papers found for Curator")
+        return
+    
+    # Extract threat data
+    threat_list = []
+    for msg_id, data in messages:
+        try:
+             # RedisClient stores data as {"data": json_string}
+             if "data" in data and isinstance(data["data"], str):
+                 payload = json.loads(data["data"])
+             else:
+                 payload = data
+
+             # Redis returns data as dict, need to convert to ThreatSignature
+             # Adjust published_date if string
+             ts = ThreatSignature(**payload)
+             threat_list.append(ts)
+        except Exception as e:
+             logger.warning(f"Skipping malformed threat data {msg_id}: {e}")
+    
+    logger.info(f"Curator processing {len(threat_list)} analyzed papers")
+    
+    logger.info(f"Curator processing {len(threat_list)} analyzed papers")
+    
+    # Run Editorial/Curator Workflow
+    try:
+        from ai_safety_radar.orchestration.editorial_graph import EditorialGraph
+        editorial = EditorialGraph()
+        
+        # EditorialGraph.run() calls the workflow internally
+        # It handles the creation of initial state
+        briefing = await editorial.run(threats=threat_list, previous_summary="")
+        
+        if briefing:
+            summary = briefing.summary_markdown
+            logger.info("✅ Curator briefing generated successfully")
+        else:
+            summary = "No briefing generated (Workflow returned None)"
+            logger.warning("Curator workflow returned no output")
+            
+        # Save summary to Redis for dashboard
+        await redis_client.client.set("curator:latest_summary", summary)
+        logger.info("✅ Curator summary saved to Redis")
+        
+    except Exception as e:
+        logger.error(f"Failed to run Curator/Editorial workflow: {e}")
+        # Build a safe fallback so dashboard doesn't crash
+        await redis_client.client.set("curator:latest_summary", f"Error generating summary: {e}")
 
 async def listen_for_triggers(redis_client, process_callback):
     """Listens for manual processing triggers via Redis PubSub."""
@@ -20,16 +79,16 @@ async def listen_for_triggers(redis_client, process_callback):
     
     async for message in pubsub.listen():
         if message["type"] == "message":
-            logger.info("⚡ Manual trigger received, processing batch...")
-             # We can't await the callback directly if it's the main loop, 
-             # but here we just want to wake up or ensure processing happens.
-             # Actually, the main loop is polling. 
-             # For a blocking list pop, we'd need to interrupt.
-             # For xreadgroup with block, we just wait.
-             # Since we are using a loop with timeout, this might just log.
-             # But let's act on it: we can try to process one batch immediately.
+            data = message["data"]
+            if isinstance(data, bytes):
+                data = data.decode("utf-8")
+            logger.info(f"⚡ Manual trigger received: {data}")
+            
             try:
-                await process_callback(manual=True)
+                if data == "process_with_curator":
+                    await process_callback(manual=True, run_curator=True)
+                else:
+                    await process_callback(manual=True)
             except Exception as e:
                 logger.error(f"Manual trigger processing failed: {e}")
 
@@ -53,9 +112,15 @@ async def run_agent_core() -> None:
     
     logger.info(f"Listening for jobs in 'papers:pending' as {CONSUMER_GROUP}...")
     
+    analyzed_count_ref = {"count": 0}
+
     # Define processing logic to be reusable
-    async def process_batch(manual=False):
+    async def process_batch(manual=False, run_curator=False):
         try:
+             if run_curator:
+                 await run_curator_workflow(redis_client)
+                 return
+
              # Block less usage if manual
              block_time = 1000 if manual else 5000
              jobs = await redis_client.read_jobs("papers:pending", CONSUMER_GROUP, CONSUMER_NAME, count=1, block=block_time)
@@ -92,6 +157,11 @@ async def run_agent_core() -> None:
                     else:
                         forensic.log_event("ANALYSIS_COMPLETE", "INFO", details={"result": "No threat or Irrelevant"})
                         logger.info(f"Analysis complete (Irrelevant): {doc.id}")
+
+                    # Increment analyzed count for auto-curation
+                    analyzed_count_ref["count"] += 1
+                    if analyzed_count_ref["count"] % 5 == 0:
+                        await run_curator_workflow(redis_client)
                         
                     # Ack
                     await redis_client.client.xack("papers:pending", CONSUMER_GROUP, msg_id)

@@ -106,7 +106,7 @@ class EditorialGraph:
             retry_count=0,
             final_output=None
         )
-        final_state = await self.workflow.invoke(initial_state)
+        final_state = await self.workflow.ainvoke(initial_state)
         
         # If finalized, return that. If max retries, return current draft.
         return cast(Optional[DailyBriefing], final_state.get("final_output") or final_state.get("current_briefing"))

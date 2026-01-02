@@ -87,6 +87,13 @@ with tab1:
                 st.success("Processing triggered! Check Agent Core logs.")
             else:
                  st.error("Redis disconnected.")
+        
+        if st.button("⚡ Trigger Processing + Curator"):
+             if r_client:
+                r_client.publish("agent:trigger", "process_with_curator")
+                st.success("Triggered batch processing with Curator synthesis!")
+             else:
+                st.error("Redis disconnected.")
 
     with col_ctrl2:
         if st.button("🔄 Reset Consumer Group"):
