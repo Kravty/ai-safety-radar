@@ -1,18 +1,32 @@
 # MATS Portfolio: AI Safety Radar
 
-## 1. Project Overview
-**AI Safety Radar** is an autonomous threat intelligence engine designed to monitor, analyze, and categorize emerging risks in the AI domain. It demonstrates **Agentic Engineering**, **Secure Systems Design**, and **MLOps** capabilities.
+## Project Status 🟡
 
-### Key Features
-- **Data Diode Architecture**: `agent_core` operates in a strictly air-gapped network, communicating only via Redis Streams.
-- **Multi-Agent Orchestration**: Utilizes `LangGraph` to manage `Filter`, `Extraction`, `Curator`, and `Critic` agents.
-- **Forensic Logging**: Securely hashes and logs all agent inputs to prevent prompt injection fallout.
-- **Automated Intelligence**: Self-updating dashboard and documentation based on real-time findings.
+> **Current State:** Development (ingestion pipeline blocked)  
+> **Dashboard:** ✅ Working  
+> **ArXiv Ingestion:** 🔴 Zero papers accepted
+
+---
+
+## 1. Project Goal (Clarified)
+
+**Primary Objective:**  
+Build a news aggregator that provides weekly digests of AI Security research from ArXiv, enabling researchers to stay current without manually scanning hundreds of papers.
+
+**What It Is:**
+- Track NEW papers on ArXiv (adversarial attacks, alignment, robustness, red teaming)
+- Weekly digest of 10-20 relevant papers
+- Like a RSS reader for AI Security research
+
+**What It Is NOT:**
+- NOT a system to find "potential threats" in arbitrary AI papers
+- NOT a threat detector for general ML papers
+
+---
 
 ## 2. Technical Architecture
 
-### 🛡️ Security-First Design
-The system implements a Zero Trust architecture with network isolation enforced by Docker Compose.
+### Security-First Design
 
 ```mermaid
 graph TD
@@ -24,9 +38,12 @@ graph TD
         Redis[(Redis Streams)]
     end
     
-    subgraph "Secure Enclave (No Internet)"
+    subgraph "Secure Enclave (Air-Gapped)"
         Agent[Agent Core] 
-        Ollama[Ollama LLM]
+    end
+    
+    subgraph "Remote Inference"
+        Jetson[Jetson AGX Orin<br/>Ollama LLM]
     end
     
     subgraph "Visualization"
@@ -37,31 +54,113 @@ graph TD
     Redis -->|Pull Job| Agent
     Agent -->|Push Result| Redis
     Redis <-->|Read Data| Dashboard
-    Agent -->|Inference| Ollama
+    Agent -->|HTTP| Jetson
 ```
 
-### 🧠 Agentic Workflow
-1. **Ingestion**: Fetches papers.
-2. **FilterAgent**: Classifies relevance (Safety vs General AI).
-3. **ExtractionAgent**: Structured output via `instructor` (Pydantic models).
-4. **CuratorAgent**: Synthesizes "State of the Threat Landscape".
-5. **Dashboard**: Visualizes findings in real-time.
+### Agentic Workflow
 
-## 3. Engineering Decisions & Trade-offs
-- **Redis Streams vs Kafka**: Chose Redis for simplicity in deployment and sufficient throughput for document processing, while still offering consumer groups.
-- **Local LLM (Ollama)**: Prioritized privacy and cost-efficiency over proprietary APIs. Allows offline red-teaming.
-- **Streamlit**: Selected for rapid prototyping of data dashboards compared to React/Next.js.
+1. **Ingestion**: Fetches papers from ArXiv → `papers:pending`
+2. **FilterAgent**: Classifies relevance (AI Security vs General) - 🔴 BLOCKED
+3. **ExtractionAgent**: Structured output via Pydantic models - ✅ Working
+4. **CriticAgent**: Validates extraction quality - ✅ Working
+5. **CuratorAgent**: Synthesizes weekly digest - ✅ Working
+6. **Dashboard**: Visualizes findings - ✅ Working
 
-## 4. Verification & Security Checks
-We implement rigorous testing to ensure network isolation holds.
+---
 
-| Test Case | Status | Description |
-|---|---|---|
-| `test_no_internet_access` | ✅ PASS | Confirms Agent Core cannot reach Google/DNS. |
-| `test_pipeline_flow` | ✅ PASS | Verifies end-to-end data processing (using mocks). |
-| `Forensic Logging` | ✅ ACTIVE | SHA256 hashing of prompts enabled. |
+## 3. Current Challenges
 
-## 5. Future Work
-- **Dead Letter Queues**: Handling "poison pill" inputs that crash agents.
-- **Vector Database**: RAG for historical threat correlation.
-- **Human-in-the-Loop**: Approval workflow for high-severity alerts.
+### Critical Issue: Zero Paper Ingestion
+
+**Problem:** FilterAgent rejecting ALL ArXiv papers
+
+**Example Rejections:**
+- "Towards Provably Secure Generative AI" ❌
+- "Iterative Deployment Improves Planning in LLMs" ❌
+- "MSACL: Multi-Step Actor-Critic Learning" ❌
+
+**Root Cause Hypotheses:**
+1. Prompt expects explicit "attack" language, misses academic terminology
+2. LLM not being called (old code still running?)
+3. Container deployment issue (restart ≠ code reload)
+
+**Impact:** Dashboard shows only 2 manual test papers
+
+---
+
+## 4. What Works ✅
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Dashboard UI | ✅ | Metrics, tables, charts all functional |
+| Agent Status | ✅ | polling/processing toggle working |
+| Pending Count | ✅ | Uses XPENDING (accurate) |
+| Content Dedup | ✅ | Title hash prevents duplicates |
+| Redis Streams | ✅ | Consumer groups, ACK logic |
+| ExtractionAgent | ✅ | Tested with manual papers |
+| CriticAgent | ✅ | Validates extractions |
+| CuratorAgent | ✅ | Generates digests |
+
+---
+
+## 5. Engineering Decisions
+
+- **Redis Streams vs Kafka**: Redis for simplicity, consumer groups sufficient
+- **Local LLM (Ollama on Jetson)**: Privacy, cost-efficiency, offline capability
+- **Streamlit**: Rapid prototyping, real-time updates
+- **Content-Based Deduplication**: Title hash instead of ID prevents semantic duplicates
+
+---
+
+## 6. Lessons Learned
+
+1. **LLM Prompting is Brittle**
+   - "Filter for security threats" → Too narrow
+   - "News aggregator for security research" → Clearer goal
+
+2. **Verification Must Use Actual Logs**
+   - Multiple false "verified" claims during development
+   - Container restart ≠ code reload
+
+3. **Architecture Matters**
+   - Two-stage filtering (ingestion + agent) creates confusion
+   - Consider single-stage filtering for simplicity
+
+---
+
+## 7. Next Steps
+
+**Immediate (Critical Path):**
+1. Verify code is actually deployed in containers
+2. Test FilterAgent manually with known papers
+3. Fix prompt to align with news aggregator goal
+
+**Short-Term:**
+1. Broaden ArXiv query
+2. Add dashboard metrics: "Papers reviewed vs accepted"
+3. Weekly digest notifications
+
+---
+
+## 8. MATS Alignment
+
+This project contributes to AI Safety research infrastructure:
+- Reduces information overload for safety researchers
+- Enables faster response to emerging threats
+- Documents threat landscape evolution
+
+**Relevance to Alignment:**
+- Interpretability of AI systems
+- Robustness to adversarial inputs
+- Transparency in AI evaluation
+
+---
+
+## 9. Metrics
+
+| Metric | Target | Current |
+|--------|--------|---------|
+| Papers/week | 10-20 | 0 |
+| Acceptance rate | 20-30% | 0% |
+| Dashboard uptime | 99% | 100% |
+| LLM cost/month | <$10 | $0 (local) |
