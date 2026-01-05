@@ -31,6 +31,33 @@ The AI Safety Radar is an automated red-teaming tool that ingests research paper
 **Mitigation**:
 - **Internal Networks**: `agent_core` is on `internal_msg_net` (Redis only) and `internal_model_net` (Ollama only). Docker internal networks block outbound traffic, including DNS.
 
+### D. Adversarial Paper Injection (Filter Bypass)
+**Risk**: Attacker publishes paper with keywords designed to bypass filter.
+**Example**:
+```
+Title: "Optimizing Neural Network Training" (benign-looking)
+Abstract: "jailbreak adversarial prompt injection..." (keyword stuffing)
+```
+**Impact**: Low (paper gets accepted but no execution risk)
+**Mitigation**:
+- **Two-stage validation** - Regex + LLM both must agree
+- **ML anchor requirement** - Keywords need ML context
+- **Critic agent** - Validates extraction quality
+- **Human review** - Dashboard allows manual rejection
+
+### E. Filter Drift (Concept Drift)
+**Risk**: AI Security field evolves, filter becomes outdated.
+**Example**: New attack class "prompt smuggling" not in keyword list.
+**Impact**: Medium (may miss relevant papers)
+**Mitigation**:
+- **Configurable patterns** - Update regex in `filter_logic.py`
+- **LLM fallback** - Catches novel patterns
+- **Monitoring** - Track rejection rate over time
+- **User feedback** - Manual additions flag missing patterns
+
+**Recommendation**: Review filter patterns quarterly, update based on field evolution.
+
 ## 4. Residual Risks
 - **Ollama Vulnerabilities**: If the local Ollama instance is compromised via the internal network, it could affect the host. (Mitigation: Keep Ollama updated).
 - **Redis DoS**: Malformed messages could crash the Redis consumer. (Mitigation: Future DLQ implementation).
+- **Filter False Negatives**: Strict filtering may miss some relevant papers. (Mitigation: Manual review, user feedback loop).

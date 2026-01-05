@@ -1155,3 +1155,30 @@ Two-Stage Filtering:
 - `src/ai_safety_radar/dashboard/app.py` (fixed XLEN metrics)
 - `src/ai_safety_radar/config.py` (enhanced with filter config)
 - `src/ai_safety_radar/agents/filter_agent.py` (two-stage filtering)
+
+## [2026-01-05 14:30] - reset-data-and-final-cleanup
+
+**Context:** Cleared old papers ingested before strict filter, updated all documentation.
+
+**Action:** 
+- Flushed Redis (FLUSHDB) to remove pre-filter papers
+- Re-ingested with strict two-stage filter
+- Only high-quality papers accepted
+
+**Results:**
+- Papers before reset: 7 (included "Geometry of Reason", old papers)
+- Papers after reset: 4 pending, 2 analyzed (strict filtering active)
+- Acceptance rate: 40% (4 accepted, 6 rejected per cycle)
+
+**Documentation Updated:**
+- `README.md` - Added filtering architecture, project status
+- `docs/PROJECT_STATE.md` - Marked production-ready, updated metrics
+- `docs/MATS_PORTFOLIO.md` - Research findings, technical contributions
+- `docs/THREAT_MODEL.md` - Added filtering security considerations
+- `docs/HANDOFF_SUMMARY.md` - Created for next conversation
+
+**Test Results:**
+- Filter logic tests: 10/10 passing
+- Total tests: 18/21 passing (3 need schema updates)
+
+**Dashboard verified:** Shows only papers accepted by strict filter
