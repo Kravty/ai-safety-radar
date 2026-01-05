@@ -80,32 +80,36 @@ class FilterAgent:
             )
         
         # STAGE 2: LLM validation (only for borderline cases: score 30-70)
-        prompt = f"""You are filtering papers for an AI SECURITY research aggregator.
+        prompt = f"""You are filtering papers for an AI Security research aggregator applying the 80/20 Pareto rule.
 
-**Pre-filter analysis:** Score={regex_result['score']}, Signals={regex_result['reasons']}
+**Pre-filter analysis:** Score={regex_result['score']}, Reasons={regex_result['reasons']}
 
 **Paper:**
 Title: {title}
-Abstract: {abstract}
+Abstract: {abstract[:500]}
 
-**STRICT CRITERIA (Apply 80/20 Pareto rule - accept only TOP 20%):**
+**ULTRA-STRICT CRITERIA (Top 20% Only):**
 
-✅ ACCEPT only if paper directly contributes to:
-- Adversarial attacks/defenses on ML systems
-- Model security, robustness, safety alignment
-- Red teaming, jailbreaking, prompt injection
-- Privacy attacks (membership inference, model extraction)
-- LLM/GenAI security specifically
+✅ ACCEPT **ONLY** if paper demonstrates:
+1. **Concrete attacks** - Jailbreaks, adversarial examples, prompt injection, model extraction
+2. **Security defenses** - Adversarial training, input validation, robustness methods
+3. **Empirical security research** - Red teaming results, attack success rates, vulnerability discovery
 
-❌ REJECT if paper is:
-- Domain application (medical, battery, robotics) without AI-specific security insights
-- Pure ML optimization (faster training, better accuracy) without safety angle
-- Traditional cybersecurity (network attacks, malware) unless AI-focused
-- General ML theory without security/safety implications
+❌ AUTO-REJECT if:
+1. **Pure theory** - "Mathematical foundations", "theoretical framework", "geometry of reasoning"
+2. **Tangential mentions** - "Applications to AI safety" without concrete security analysis
+3. **Domain research** - Medical, physics, biology papers that use ML but aren't about ML security
+4. **Optimization papers** - Faster training, better accuracy WITHOUT security angle
+5. **Interpretability** - Feature attribution, explainability UNLESS tied to attack detection
 
-**Question:** Does this paper belong in the TOP 20% most relevant AI Security research?
+**CRITICAL TEST:**
+- Would a red team researcher cite this paper in a security report?
+- Does the paper show HOW to attack or defend AI systems?
+- Are there empirical results (success rates, benchmarks, exploits)?
 
-Think step-by-step, then decide."""
+If NO to all 3 → **REJECT**.
+
+**Your decision:** ACCEPT or REJECT with reasoning (50-150 words)."""
 
         try:
             llm_result = await self.llm_client.extract(

@@ -1182,3 +1182,53 @@ Two-Stage Filtering:
 - Total tests: 18/21 passing (3 need schema updates)
 
 **Dashboard verified:** Shows only papers accepted by strict filter
+
+## [2026-01-05 15:30] - fix-false-positive-geometry-paper
+
+**Context:** "Geometry of Reason" paper was incorrectly ACCEPTED despite being pure math theory without concrete security research.
+
+**Root Cause:** 
+- Paper mentioned "ai safety" in tangential way (e.g., "applications to AI safety monitoring")
+- This triggered `STRONG_AML` pattern which gave 50 points
+- No empirical evidence check to penalize pure theory
+
+**Three-Part Fix Applied:**
+
+1. **Strengthened FilterAgent LLM Prompt:**
+   - Added "ULTRA-STRICT CRITERIA" section
+   - Explicit rejection for "Pure theory" and "Tangential mentions"
+   - Three-question test: red team citation? attack/defense HOW? empirical results?
+   - If NO to all 3 → REJECT
+
+2. **Enhanced Regex Kill List & Empirical Signals:**
+   - Added pure theory patterns: `spectral signature`, `geometry of reasoning`, `theorem proving`, `mathematical foundation`
+   - Added interpretability without security: `explaining predictions`, `feature attribution`, `model interpretation` (unless attack-related)
+   - Added `EMPIRICAL` regex: attack success, exploit, vulnerability discovered, experiment, benchmark, case study
+   - Theory penalty: Papers with score >40 but no empirical evidence get 30% penalty (0.7x multiplier)
+   - Penalty NOT applied to papers with strong AML signals
+
+3. **Removed Bare "ai safety" from STRONG_AML:**
+   - "ai safety" alone is too broad (triggers on "applications to AI safety")
+   - Kept "ai security" and "ai alignment" as strong signals
+   - Added `AI_SAFETY_CONTEXT` regex requiring concrete context: "ai safety research/attack/defense/benchmark/evaluation"
+
+**Test Results:**
+- All 10/10 filter logic tests passing
+- `test_geometry_math_paper_rejected` passes (score=0)
+
+**Live Verification:**
+```
+Before fix: "Geometry of Reason" → ACCEPTED (score=75)
+After fix:  "Geometry of Reason" → REJECTED (score=10)
+Reason: "GENAI_BOOST: {'qwen', 'mistral', 'llama'}; ML_FOUNDATION: 6 ML terms"
+```
+
+**Acceptance Rate:**
+- Before: 40% (4/10)
+- After: 20% (2/10) ← ULTRA-STRICT
+
+**Files Modified:**
+- `src/ai_safety_radar/agents/filter_agent.py` (stricter LLM prompt)
+- `src/ai_safety_radar/agents/filter_logic.py` (theory kill list, empirical signals, removed bare "ai safety")
+
+**Impact:** Even stricter filtering - only papers with concrete attacks/defenses or empirical security research accepted

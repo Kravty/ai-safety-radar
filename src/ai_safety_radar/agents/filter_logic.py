@@ -26,10 +26,18 @@ class MLSecurityFilter:
             | machine\s+unlearning | alignment\s+tax | safety\s+fine[- ]?tun\w*
             | rlhf | constitutional\s+ai | reward\s+hack\w*
             | llm\s+attack | llm\s+security | llm\s+safety
-            | ai\s+safety | ai\s+security | ai\s+alignment
+            | ai\s+security | ai\s+alignment
             | backdoor\s+attack\w* | data\s+poison\w* | trojan\s+attack\w*
             | federated\s+learning\s+attack\w* | model\s+poison\w*
             | poison\w*\s+(attack|dataset|training)
+            )\b
+        """, re.VERBOSE)
+        
+        # STAGE 1B: AI Safety with concrete context (not vague "applications to AI safety")
+        self.AI_SAFETY_CONTEXT = re.compile(r"""
+            (?xi)\b(
+            ai\s+safety\s+(research|attack|defense|benchmark|evaluation|audit|testing|threat)
+            | ai\s+security\s+(research|attack|defense|benchmark|evaluation|audit|testing|threat)
             )\b
         """, re.VERBOSE)
         
@@ -71,6 +79,16 @@ class MLSecurityFilter:
             | elliptic\s+curve | rsa\s+encryption | aes\s+block | block\s+cipher
             | hash\s+collision | digital\s+signature\s+scheme
             
+            # Pure theory without attack context
+            | spectral\s+signature | mathematical\s+foundation(?!.*attack)
+            | geometry\s+of\s+reasoning | theorem\s+proving
+            | topology\s+of | axiomatic\s+approach
+            
+            # Interpretability without security angle
+            | explaining\s+predictions(?!.*adversarial)
+            | feature\s+attribution(?!.*attack)
+            | model\s+interpretation(?!.*(security|attack|adversarial))
+            
             # Domain-specific applications (not AI security research)
             | battery\s+(fault|diagnosis|monitor|manage)
             | medical\s+diagnosis | cancer\s+detection | tumor\s+segment
@@ -101,6 +119,18 @@ class MLSecurityFilter:
             | guardrail | content\s+filter | moderation
             | decepti\w+ | manipulat\w+ | persuasi\w+
             | existential\s+risk | x[- ]?risk | catastroph\w+
+            )\b
+        """, re.VERBOSE)
+        
+        # STAGE 6: Empirical evidence requirement (prioritize papers with experiments)
+        self.EMPIRICAL = re.compile(r"""
+            (?xi)\b(
+            attack\s+success | exploit | vulnerability\s+discovered?
+            | experiment.*adversarial | benchmark.*security
+            | \d+%\s+(success|attack) | jailbreak\s+rate
+            | transferability.*attack | real[- ]?world.*exploit
+            | case\s+stud(y|ies) | empirical\s+(eval|result|analys)
+            | dataset.*attack | \d+\s+samples? | \d+\s+model
             )\b
         """, re.VERBOSE)
     
@@ -134,9 +164,15 @@ class MLSecurityFilter:
         
         # CHECK 2: Strong AML signals (golden ticket)
         strong_matches = self.STRONG_AML.findall(text)
+        ai_safety_context = self.AI_SAFETY_CONTEXT.findall(text)
+        
         if strong_matches:
             score += 50
             reasons.append(f"STRONG_AML: {set(strong_matches)}")
+        elif ai_safety_context:
+            # "AI safety" with specific context (research/attack/etc)
+            score += 50
+            reasons.append(f"AI_SAFETY_CONTEXT: {set(ai_safety_context)}")
         
         # CHECK 3: Safety/alignment terms (high priority)
         safety_matches = self.SAFETY_TERMS.findall(text)
@@ -160,7 +196,16 @@ class MLSecurityFilter:
             score = int(score * 1.3)
             reasons.append(f"GENAI_BOOST: {set(genai_matches)}")
         
-        # CHECK 6: ML foundation (base relevance)
+        # CHECK 6: Empirical evidence (prioritize papers with experiments)
+        empirical_matches = self.EMPIRICAL.findall(text)
+        if empirical_matches:
+            score += 15
+            reasons.append(f"EMPIRICAL_EVIDENCE: {set(empirical_matches)}")
+        elif score > 40 and not strong_matches:  # Only penalize theory papers WITHOUT strong signals
+            score = int(score * 0.7)  # Theory penalty
+            reasons.append("THEORY_PENALTY: No empirical evidence")
+        
+        # CHECK 7: ML foundation (base relevance)
         if ml_anchor_count >= 3:
             score += 10
             reasons.append(f"ML_FOUNDATION: {ml_anchor_count} ML terms")
