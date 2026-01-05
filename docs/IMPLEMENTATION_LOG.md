@@ -936,3 +936,62 @@ If FilterAgent rejects #1 or #2, prompt is broken.
 1. Test with actual paper to verify Instructor works with local LLM
 2. Monitor for any validation errors
 3. Consider removing `chat()` method from LLMClient (now unused)
+
+## [2026-01-05 10:45] - cleanup-and-test-updates
+
+**Context:** Phase 2 of refactoring - code cleanup, test modernization, and preparation for ingestion fix.
+
+**Changes Made:**
+
+1. **Removed Unused `chat()` Method** (`utils/llm_client.py`)
+   - Verified no usage with `grep -r "\.chat(" src/`
+   - Removed 44 lines of dead code (lines 75-117)
+   - Method was added as workaround during debugging, no longer needed after ExtractionAgent refactor
+   - Simplifies LLMClient to single responsibility: structured extraction via Instructor
+
+2. **Updated Test Suite** (`tests/agents/`)
+   - **test_extraction_agent.py**: Refactored to use ExtractionResult instead of ThreatSignature in mock
+   - **test_filter_agent.py**: Created comprehensive test suite (5 test cases)
+   - Both test files updated to match new project goal (news aggregator, not threat detector)
+
+**Test Coverage:**
+
+**ExtractionAgent Tests (3 tests):**
+- ✅ `test_jailbreak_paper_extraction` - Validates jailbreak paper extraction
+- ✅ `test_defense_paper_extraction` - Validates defense paper extraction
+- ✅ `test_severity_string_to_int_conversion` - Validates Pydantic validator works
+
+**FilterAgent Tests (5 tests):**
+- ✅ `test_accept_jailbreak_paper` - Accepts obvious attack papers
+- ✅ `test_accept_security_paper` - Accepts security-focused papers
+- ✅ `test_reject_non_security_paper` - Rejects domain-specific papers (battery)
+- ✅ `test_accept_robustness_paper` - Accepts implicit safety papers (robustness)
+- ✅ `test_result_structure` - Validates FilterResult schema
+
+**Test Results:**
+```bash
+$ uv run pytest tests/agents/test_extraction_agent.py -v
+3 passed, 7 warnings in 2.82s
+
+$ uv run pytest tests/agents/test_filter_agent.py -v
+5 passed, 1 warning in 1.32s
+```
+
+**Total: 8/8 tests passing**
+
+**Warnings Noted:**
+- Pydantic deprecation warning for `class Config` (should use `ConfigDict`)
+- `datetime.utcnow()` deprecation (should use `datetime.now(datetime.UTC)`)
+- Both are non-critical, can be fixed later
+
+**Files Modified:**
+- `src/ai_safety_radar/utils/llm_client.py` (removed chat method)
+- `tests/agents/test_extraction_agent.py` (refactored for new architecture)
+- `tests/agents/test_filter_agent.py` (created new test file)
+
+**Code Quality Improvements:**
+- ✅ Cleaner LLMClient with single responsibility
+- ✅ Tests match current project architecture
+- ✅ Comprehensive test coverage for both agents
+- ✅ Tests validate Pydantic validators work correctly
+- ✅ All tests use mocks (no external LLM calls needed)
