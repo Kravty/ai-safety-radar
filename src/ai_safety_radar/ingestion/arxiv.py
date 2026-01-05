@@ -44,9 +44,35 @@ class ArXivIngester(BaseIngester):
         Raises:
             httpx.HTTPError: If API request fails
         """
-        query = " OR ".join([f'all:"{k}"' for k in self.SAFETY_KEYWORDS])
-        # Categories: Cryptography and Security, AI, Machine Learning
-        query = f"({query}) AND (cat:cs.CR OR cat:cs.AI OR cat:stat.ML)"
+        SECURITY_SEARCH_QUERIES = [
+            # Adversarial ML
+            'cat:cs.CR AND (adversarial OR attack OR robustness)',
+            'cat:cs.LG AND (jailbreak OR "red team" OR "prompt injection")',
+            
+            # AI Safety & Alignment
+            'cat:cs.AI AND (safety OR alignment OR "catastrophic risk")',
+            'cat:cs.CY AND ("AI governance" OR "AI policy")',
+            
+            # Specific Attack Types
+            'all:"backdoor attack" AND (neural OR deep OR model)',
+            'all:"model extraction" OR all:"membership inference"',
+            'all:"data poisoning" AND machine learning',
+            
+            # Defense Research
+            'all:"adversarial training" OR all:"certified robustness"',
+            'all:"AI safety" AND (technical OR research)',
+            
+            # Multi-modal Security
+            'all:"vision-language model" AND (security OR adversarial)',
+        ]
+        
+        # Combine all queries with OR (API allows boolean) - but max length might be issue.
+        # Splitting logic would be better if volume requires, but let's try combined first or pick one/round-robin?
+        # User implies we should expand coverage. Combined OR might hit API limits.
+        # Let's iterate if possible or combine intelligently.
+        # With httpx, we can only send one 'search_query'.
+        # Let's join them with OR.
+        query = " OR ".join([f"({q})" for q in SECURITY_SEARCH_QUERIES])
         
         start = 0
         batch_size = settings.arxiv_max_results

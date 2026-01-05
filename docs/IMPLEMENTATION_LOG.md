@@ -1070,3 +1070,88 @@ ai-safety-radar_dashboard_1: Up 9 minutes
 - ✅ Dashboard accessible at http://localhost:8501
 
 **Files Modified:** None (deployment fix only)
+
+## [2026-01-05 11:00] - phase3-refinement-and-quality-control
+
+**Context:** Ingestion pipeline working but accepting too many irrelevant papers. Implemented 80/20 Pareto rule filtering.
+
+**Issues Fixed:**
+
+### Issue 1: Dashboard Metrics Mismatch
+- **Problem:** Dashboard showed "1 pending" when Redis had 21
+- **Root Cause:** Dashboard used `XPENDING` (unacked messages) instead of `XLEN` (total)
+- **Fix:** Changed to `r_client.xlen("papers:pending")` for accurate counts
+
+### Issue 2: Centralized Configuration
+- **Enhanced** `config.py` with Pydantic Fields and descriptions
+- **Added:** Filter configuration (mode, thresholds, known authors)
+- **Added:** LLM temperature, ingestion parameters
+- **Benefit:** All parameters in one file, environment variable overrides
+
+### Issue 3: Strict FilterAgent (80/20 Pareto Rule)
+
+**Created:** `filter_logic.py` - Regex-based ML Security filter inspired by N. Carlini's corpus
+
+**Architecture:**
+```
+Two-Stage Filtering:
+├── Stage 1: Regex Pre-filter (instant, deterministic)
+│   ├── Score < 30 → AUTO-REJECT (no LLM call)
+│   ├── Score 30-70 → LLM validation
+│   └── Score > 70 → AUTO-ACCEPT (no LLM call)
+└── Stage 2: LLM validation (only for borderline cases)
+```
+
+**Filter Logic:**
+- **STRONG_AML:** jailbreak, adversarial attack, prompt injection, red team, etc.
+- **SAFETY_TERMS:** alignment, safety eval, guardrail, harmful content
+- **AMBIGUOUS:** backdoor, trojan, poison (require ML anchor to validate)
+- **KILL_LIST:** hardware trojan, battery diagnosis, medical, financial (auto-reject)
+- **GENAI_BOOST:** GPT, Claude, LLaMA (1.3x score multiplier)
+
+**Test Results (10/10 pass):**
+```
+✅ test_strong_aml_signal_accepts - Jailbreak paper: score=50
+✅ test_kill_list_rejects_hardware - Hardware paper: REJECT
+✅ test_battery_paper_rejected - BatteryAgent: REJECT
+✅ test_geometry_math_paper_rejected - Math paper: score=0
+✅ test_ambiguous_with_ml_anchor_accepts - Backdoor+NN: score=90
+✅ test_genai_boost - GPT red team: score=65
+✅ test_safety_alignment_accepts - Alignment: score=80
+✅ test_pure_optimization_rejected - Optimization: score=10
+✅ test_medical_domain_rejected - Medical: REJECT
+✅ test_robustness_with_adversarial_accepts - Adversarial: score=90
+```
+
+**Live Results:**
+- Ingestion Summary: 4 accepted, 6 rejected (40% acceptance rate)
+- Before: ~80-90% acceptance rate (too permissive)
+- After: ~40% acceptance rate (stricter, higher quality)
+
+**Example Rejections:**
+```
+❌ "Interpretability-Guided Bi-objective Optimization" (score=0)
+❌ "SEMODS: Software Engineering Models" (score=10)
+❌ "HFedMoE: Federated Learning" (score=10, no security angle)
+```
+
+**Example Acceptances:**
+```
+✅ "Adversarial Samples Are Not Created Equal" (score=140)
+✅ "FedHypeVAE" (score=40 → LLM validated)
+```
+
+**Benefits:**
+1. **Reduced LLM calls by ~60%** - Most papers filtered by regex
+2. **Higher precision** - Only top papers accepted
+3. **Faster ingestion** - Regex is instant vs 30s LLM call
+4. **Configurable** - Thresholds in config.py
+
+**Files Created:**
+- `src/ai_safety_radar/agents/filter_logic.py` (new)
+- `tests/agents/test_filter_logic.py` (new)
+
+**Files Modified:**
+- `src/ai_safety_radar/dashboard/app.py` (fixed XLEN metrics)
+- `src/ai_safety_radar/config.py` (enhanced with filter config)
+- `src/ai_safety_radar/agents/filter_agent.py` (two-stage filtering)

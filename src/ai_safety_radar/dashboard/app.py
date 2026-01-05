@@ -1,259 +1,385 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import redis
 import json
-import os
-import time
+import logging
 from datetime import datetime
+import os
+import plotly.express as px
 
-# Page Config
-st.set_page_config(
-    page_title="AI Safety Radar | Intelligence Dashboard",
-    page_icon="🛡️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Configuration
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-# Utils
+# Setup Validation
 @st.cache_resource
 def get_redis_client():
-    redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+    """Cached Redis connection (reused across requests)."""
     try:
-        return redis.from_url(redis_url, decode_responses=True)
+        if "redis" in REDIS_URL:
+            r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+            r.ping()
+            return r
+        return None
     except Exception as e:
+        logging.error(f"Redis connect error: {e}")
         return None
 
-def get_stream_data(client, stream_key, count=1000):
-    if not client:
+r_client = get_redis_client()
+
+def get_stream_data(redis_client, stream_key, count=100):
+    """Fetch structured data from Redis Stream."""
+    if not redis_client:
         return []
     try:
-        # Read from stream. 
-        # xrange returns list of (id, {data})
-        # We assume data is JSON string in "data" field or direct dict fields
-        # Based on RedisClient implementation, we wrap payload in "data" field as JSON string.
-        # But wait, RedisClient.add_job does: xadd(queue_name, {"data": json.dumps(payload)})
-        
-        items = client.xrange(stream_key, min="-", max="+", count=count)
-        parsed_items = []
-        for msg_id, data in items:
-            try:
-                if 'data' in data:
-                     payload = json.loads(data['data'])
-                else:
-                     payload = data # Fallback
-                
-                payload['stream_id'] = msg_id
-                parsed_items.append(payload)
-            except:
-                continue
-        return parsed_items
+        data = redis_client.xrevrange(stream_key, count=count)
+        parsed = []
+        for msg_id, payload in data:
+            if isinstance(payload, dict):
+                 # Handle potentially stringified json in 'data' field or flattened fields
+                 if 'data' in payload and isinstance(payload['data'], str):
+                     try:
+                         item = json.loads(payload['data'])
+                     except:
+                         item = payload
+                 else:
+                     item = payload
+                 
+                 item['id'] = msg_id
+                 parsed.append(item)
+        return parsed
     except Exception as e:
-        st.error(f"Error reading stream {stream_key}: {e}")
+        logging.error(f"Stream read error: {e}")
         return []
 
-# Sidebar
-st.sidebar.title("🛡️ AI Safety Radar")
-st.sidebar.markdown("---")
-refresh = st.sidebar.button("🔄 Refresh Data")
-
-# Redis Connection
-r_client = get_redis_client()
-redis_status = "🟢 Connected" if r_client and r_client.ping() else "🔴 Disconnected"
-st.sidebar.caption(f"Redis Status: {redis_status}")
-if not r_client:
-    st.warning("Redis is unreachable. Showing cached/empty data.")
-
-# Data Fetching
-analyzed_threats = get_stream_data(r_client, "papers:analyzed")
-pending_papers = get_stream_data(r_client, "papers:pending")
-
-# Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "🗂️ Threat Catalog", "🌍 SOTA Tracker", "🔒 Security Status"])
-
-with tab1:
-    st.header("Threat Landscape Overview")
+# --- Sidebar Setup ---
+def setup_sidebar():
+    """Setup sidebar ONCE - call this function only at app start."""
+    st.sidebar.title("🛡️ AI Safety Radar")
     
-    # Manual Controls
-    st.subheader("🔧 Manual Controls")
-
-    col_ctrl1, col_ctrl2 = st.columns(2)
-
-    with col_ctrl1:
-        if st.button("⚡ Trigger Processing", type="primary"):
-            # Send signal to agent_core to process one batch
-            if r_client:
-                r_client.publish("agent:trigger", "process_batch")
-                st.success("Processing triggered! Check Agent Core logs.")
-            else:
-                 st.error("Redis disconnected.")
+    if st.sidebar.button("🔄 Refresh Data", help="Reload all dashboard data from Redis", use_container_width=True):
+        st.rerun()
         
-        if st.button("⚡ Trigger Processing + Curator"):
-             if r_client:
-                r_client.publish("agent:trigger", "process_with_curator")
-                st.success("Triggered batch processing with Curator synthesis!")
-             else:
-                st.error("Redis disconnected.")
-
-    with col_ctrl2:
-        if st.button("🔄 Reset Consumer Group"):
-            # Reset stuck consumer group
-            if r_client:
-                try:
-                    r_client.xgroup_destroy("papers:pending", "agent_group")
-                    r_client.xgroup_create("papers:pending", "agent_group", id="0", mkstream=True)
-                    st.success("Consumer group reset!")
-                except Exception as e:
-                    st.error(f"Error resetting group: {e}")
-            else:
-                 st.error("Redis disconnected.")
-                 
-    st.markdown("---")
-
-    # KPIs
-    st.header("Threat Landscape Overview")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Threats Detected", len(analyzed_threats))
-    col2.metric("Pending Ingestion", len(pending_papers))
+    st.sidebar.markdown("---")
     
-    # Calculate High Severity Count
-    high_severity_count = sum(1 for t in analyzed_threats if t.get('severity') in ['High', 'Critical'])
-    col3.metric("Critical/High Risk", high_severity_count)
+    # System Status Section
+    st.sidebar.subheader("📊 System Status")
     
-    # Charts
-    if analyzed_threats:
-        df = pd.DataFrame(analyzed_threats)
-        
-        # Severity Dist
-        st.markdown("### Severity Distribution")
-        fig_sev = px.pie(df, names='severity', title='Threat Severity Breakdown', hole=0.4, 
-                         color='severity',
-                         color_discrete_map={'Critical': 'red', 'High': 'orange', 'Medium': 'yellow', 'Low': 'green'})
-        st.plotly_chart(fig_sev, use_container_width=True)
-        
-        # Metrics over time (Simulated if no timestamp, otherwise use published_date)
-        if 'published_date' in df.columns:
-            st.markdown("### Threat Activity Timeline")
-            df['published_date'] = pd.to_datetime(df['published_date'])
-            counts_by_date = df.groupby(df['published_date'].dt.date).size().reset_index(name='count')
-            fig_time = px.bar(counts_by_date, x='published_date', y='count', title='Threats by Date')
-            st.plotly_chart(fig_time, use_container_width=True)
+    # Redis Status
+    if r_client:
+        st.sidebar.markdown("🟢 **Redis:** Connected")
     else:
-        st.info("No threat data available yet.")
+        st.sidebar.markdown("🔴 **Redis:** Disconnected")
+        
+    # Agent Core Status
+    agent_status_val = "unknown"
+    if r_client:
+        agent_status_val = r_client.get("agent_core:status") or "unknown"
+        
+    status_emoji = {
+        "polling": "🟢",
+        "processing": "🟡",
+        "idle": "⚪",
+        "error": "🔴",
+        "unknown": "⚪"
+    }
+    st.sidebar.markdown(f"{status_emoji.get(agent_status_val, '⚪')} **Agent Core:** {agent_status_val.title()}")
+    
+    # Queue Metrics - Use XLEN for total stream counts
+    pending = 0
+    analyzed = 0
+    if r_client:
+        try:
+            pending = r_client.xlen("papers:pending")
+            analyzed = r_client.xlen("papers:analyzed")
+        except:
+            pass
+    st.sidebar.markdown(f"📊 **Queue:** {pending} pending, {analyzed} analyzed")
+    
+    # Status Reference (clean markdown)
+    with st.sidebar.expander("ℹ️ Status Reference"):
+        st.markdown("""
+**Redis Connection:**
+- 🟢 Connected: Database operational
+- 🔴 Disconnected: Service down
 
-with tab2:
-    st.header("Threat Catalog")
-    if analyzed_threats:
-        df_catalog = pd.DataFrame(analyzed_threats)
-        
-        # Filtering
-        cols_to_show = ['title', 'severity', 'affected_models', 'published_date', 'abstract']
-        # Handle missing cols
-        for c in cols_to_show:
-            if c not in df_catalog.columns:
-                df_catalog[c] = "N/A"
-                
-        severity_filter = st.multiselect("Filter by Severity", options=df_catalog['severity'].unique(), default=df_catalog['severity'].unique())
-        
-        filtered_df = df_catalog[df_catalog['severity'].isin(severity_filter)]
-        
-        st.dataframe(filtered_df[cols_to_show], use_container_width=True)
-        
-        # Detail view
-        st.markdown("### Threat Details")
-        selected_threat = st.selectbox("Select Threat to Inspect", options=filtered_df['title'])
-        if selected_threat:
-            threat_data = filtered_df[filtered_df['title'] == selected_threat].iloc[0]
-            st.json(threat_data.to_dict())
-            
-    else:
-        st.write("Catalog is empty.")
+**Agent Core:**
+- 🟢 Polling: Waiting for papers (normal)
+- 🟡 Processing: Actively analyzing
+- ⚪ Idle: Queue empty, no work
+- 🔴 Error: Service crashed
 
-with tab3:
-    st.header("SOTA Tracker")
-    st.markdown("summary of the current threat landscape curated by the **CuratorAgent**.")
+**Queue:**
+- Pending: Awaiting analysis
+- Analyzed: Completed papers
+        """)
+        
+    st.sidebar.markdown("---")
+    
+    # Manual Controls Section
+    st.sidebar.subheader("🎮 Manual Controls")
     
     if r_client:
-        curator_summary = r_client.get("curator:latest_summary")
-        if curator_summary:
-            st.markdown(curator_summary)
-        else:
-            st.info("No Curator summary available yet. Run the pipeline to generate one.")
+        if st.sidebar.button("📥 Trigger Ingestion", help="Fetch latest AI security papers (30s)", use_container_width=True):
+            r_client.publish("agent:trigger", "ingest")
+            st.sidebar.success("✅ Started")
             
-            # Placeholder for demo if empty
-            st.markdown("""
-            > **Simulated Update**: 
-            > *Recent analysis indicates a rise in prompt injection attacks targeting multimodal vision models.*
-            """)
+        if st.sidebar.button("⚙️ Process Queue", help="Force process pending papers", use_container_width=True):
+            r_client.publish("agent:trigger", "process_all")
+            st.sidebar.success("✅ Started")
+            
+        if st.sidebar.button("🗑️ Clear & Reset", help="⚠️ Delete all data", use_container_width=True):
+            if st.sidebar.checkbox("Confirm Delete"):
+                r_client.delete("papers:analyzed")
+                r_client.delete("curator:latest_summary")
+                st.sidebar.warning("⚠️ Cleared")
+                st.rerun()
     else:
-         st.error("Cannot fetch SOTA summary: Redis disconnected.")
+        st.sidebar.error("Controls disabled (No Redis)")
 
-with tab4:
-    st.header("Security & System Status")
+# --- Main App Entry Point ---
+def main():
+    # Page Config
+    st.set_page_config(
+        page_title="AI Safety Radar",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
     
-    # Network Isolation Check
-    st.subheader("Network Isolation Verification")
-    test_results_path = "/app/logs/test_results.json"
+    # Setup Sidebar ONCE
+    setup_sidebar()
     
-    col_sec1, col_sec2 = st.columns(2)
+    # Check Data
+    analyzed_threats = get_stream_data(r_client, "papers:analyzed")
+    pending_papers = get_stream_data(r_client, "papers:pending")
     
-    with col_sec1:
-        if os.path.exists(test_results_path):
-            try:
-                with open(test_results_path, 'r') as f:
-                    test_data = json.load(f)
-                
-                # Check summary
-                summary = test_data.get('summary', {})
-                passed = summary.get('passed', 0)
-                failed = summary.get('failed', 0)
-                
-                if failed == 0 and passed > 0:
-                     st.success(f"✅ Secure Enclave Verified ({passed} tests passed)")
-                else:
-                     st.error(f"❌ Security Verification FAILED ({failed} tests failed)")
-                     
-                with st.expander("View Verification Report"):
-                    st.json(test_data)
-            except Exception as e:
-                st.warning(f"Could not parse test results: {e}")
+    # Prepare DataFrame
+    df = pd.DataFrame()
+    if analyzed_threats:
+        df = pd.DataFrame(analyzed_threats)
+        if 'severity' not in df.columns:
+            df['severity'] = 'Unknown'
         else:
-            st.warning("⚠️ No security verification report found. Run `test_security.sh`.")
+            # Normalize severity for display/sorting
+            df['severity'] = df['severity'].astype(str).fillna('Unknown')
 
-    with col_sec2:
-        st.subheader("Queue Health")
-        st.metric("Redis: Papers Pending", len(pending_papers))
-        st.metric("Redis: Papers Analyzed", len(analyzed_threats))
+    # Tab Navigation
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "📚 Threat Catalog", "🧠 SOTA Tracker", "🔒 Security Status"])
+    
+    # --- Tab 1: Overview ---
+    with tab1:
+        st.header("📊 Threat Landscape Overview")
+        
+        # Metrics
+        col1, col2, col3 = st.columns(3)
+        total = len(df)
+        
+        # Use XLEN for total stream counts (simpler, matches Redis state)
+        pending_len = 0
+        if r_client:
+            try:
+                pending_len = r_client.xlen("papers:pending")
+            except:
+                pending_len = 0
+        
+        critical = 0
+        if not df.empty and 'severity' in df.columns:
+            critical = len(df[df['severity'].isin(['Critical', 'High', '4', '5'])])
+            
+        col1.metric("Total Threats", total)
+        col2.metric("Pending Ingestion", pending_len)
+        col3.metric("Critical Risks", critical)
+        
+        st.markdown("---")
+        
+        # Recent Activity Table
+        if not df.empty:
+            col_recent, col_charts = st.columns([1, 1])
+            
+            with col_recent:
+                st.subheader("🎯 Recent Threats")
+                display_cols = ['title', 'attack_type', 'severity', 'published_date']
+                # Filter columns that exist
+                cols = [c for c in display_cols if c in df.columns]
+                st.dataframe(df[cols].head(5), use_container_width=True, hide_index=True)
+            
+            with col_charts:
+                st.subheader("Severity Distribution")
+                # Plotly Pie Chart
+                fig_sev = px.pie(df, names='severity', title='Threat Severity Breakdown', hole=0.4, 
+                         color='severity',
+                         color_discrete_map={'Critical': 'red', 'High': 'orange', 'Medium': 'yellow', 'Low': 'green'})
+                st.plotly_chart(fig_sev, use_container_width=True)
+            
+            # Timeline Chart
+            if 'published_date' in df.columns:
+                 st.subheader("Threat Activity Timeline")
+                 try:
+                     df_time = df.copy()
+                     df_time['published_date'] = pd.to_datetime(df_time['published_date'])
+                     counts_by_date = df_time.groupby(df_time['published_date'].dt.date).size().reset_index(name='count')
+                     fig_time = px.bar(counts_by_date, x='published_date', y='count', title='Threats by Date')
+                     st.plotly_chart(fig_time, use_container_width=True)
+                 except Exception as e:
+                     st.warning(f"Could not render timeline: {e}")
 
-    # Forensic Logs
-    st.subheader("Forensic Log Stream (Last 50 Events)")
-    log_path = "/app/logs/audit.jsonl"
-    if os.path.exists(log_path):
-        logs = []
-        try:
-             # Read last N lines efficiently? 
-             # For now just read all and take last 50
-             with open(log_path, 'r') as f:
-                 lines = f.readlines()
-                 for line in lines[-50:]:
-                     try:
-                         logs.append(json.loads(line))
-                     except: 
-                         pass
-             
-             # Show as table
-             if logs:
-                 df_logs = pd.DataFrame(logs)
-                 # Reorder cols
-                 if 'timestamp' in df_logs.columns:
-                      cols = ['timestamp', 'service_name', 'event_type', 'severity', 'input_hash']
-                      existing_cols = [c for c in cols if c in df_logs.columns]
-                      st.dataframe(df_logs[existing_cols + [c for c in df_logs.columns if c not in existing_cols]], use_container_width=True)
-             else:
-                 st.info("Log file empty.")
-                 
-        except Exception as e:
-            st.error(f"Error reading logs: {e}")
-    else:
-        st.info(f"No forensic logs found at {log_path}")
+        else:
+            st.info("📭 No data available. Trigger ingestion from sidebar to start monitoring.")
 
+    # --- Tab 2: Threat Catalog ---
+    with tab2:
+        st.header("📚 Threat Catalog")
+        if not df.empty:
+            # Filter UI
+            col_search, col_filter = st.columns([3, 1])
+            with col_search:
+                 search = st.text_input("🔍 Search threats", "")
+            with col_filter:
+                 sev_options = df['severity'].unique().tolist()
+                 sev_filter = st.multiselect("Severity", sev_options, default=sev_options)
+            
+            # Apply Filters
+            df_display = df.copy()
+            if search:
+                mask = df_display.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)
+                df_display = df_display[mask]
+            
+            if sev_filter:
+                df_display = df_display[df_display['severity'].isin(sev_filter)]
+            
+            # Interactive Dataframe
+            cols_to_show = ['title', 'severity', 'attack_type', 'published_date']
+            for c in cols_to_show:
+                if c not in df_display.columns: df_display[c] = "N/A"
+                
+            event = st.dataframe(
+                df_display[cols_to_show], 
+                use_container_width=True, 
+                selection_mode="single-row",
+                on_select="rerun",
+                hide_index=True
+            )
+            
+            # Detail View (3-Tab Layout Re-implemented)
+            if event.selection and event.selection.rows:
+                idx = event.selection.rows[0]
+                if idx < len(df_display):
+                    threat_data = df_display.iloc[idx].to_dict()
+                    
+                    st.markdown("---")
+                    st.subheader(f"📄 {threat_data.get('title', 'Unknown Title')}")
+                    
+                    d_tab1, d_tab2, d_tab3 = st.tabs(["📝 Summary", "🔬 Methodology", "📊 Raw Data"])
+                    
+                    with d_tab1: # Summary Tab
+                         col_meta1, col_meta2 = st.columns(2)
+                         col_meta1.markdown(f"**Published:** {threat_data.get('published_date', 'N/A')}")
+                         col_meta1.markdown(f"**Severity:** {threat_data.get('severity', 'N/A')}")
+                         col_meta2.markdown(f"**Type:** {threat_data.get('attack_type', 'N/A')}")
+                         col_meta2.markdown(f"**Source:** {threat_data.get('source', 'arxiv')}")
+                         
+                         st.info(f"**TL;DR:** {threat_data.get('summary_tldr', 'N/A')}")
+                         
+                         st.markdown("#### Detailed Analysis")
+                         st.write(threat_data.get('summary_detailed', 'Not available.'))
+                         
+                         st.markdown("#### Key Findings")
+                         findings = threat_data.get('key_findings', [])
+                         if isinstance(findings, list):
+                             for f in findings: st.markdown(f"- {f}")
+                         else:
+                             st.write(str(findings))
+
+                         if threat_data.get('code_repository'):
+                             st.markdown(f"🔗 [Code Repository]({threat_data['code_repository']})")
+
+                    with d_tab2: # Methodology Tab
+                         st.markdown("#### Methodology Brief")
+                         st.write(threat_data.get('methodology_brief', 'N/A'))
+                         
+                         st.markdown("#### Affected Models")
+                         models = threat_data.get('affected_models', [])
+                         if isinstance(models, list):
+                             for m in models: st.markdown(f"- {m}")
+                         else:
+                             st.write(str(models))
+                             
+                         st.markdown("#### Modality")
+                         st.write(str(threat_data.get('modality', 'N/A')))
+
+                    with d_tab3: # Raw Data Tab
+                         st.json(threat_data)
+
+        else:
+            st.info("No threats to display.")
+
+    # --- Tab 3: SOTA Tracker ---
+    with tab3:
+        st.header("🧠 Intelligence Briefing")
+        summary = None
+        if r_client:
+            summary = r_client.get("curator:latest_summary")
+        
+        if summary:
+            st.markdown(summary)
+        else:
+            st.caption("No briefing generated yet.")
+
+    # --- Tab 4: Security Status ---
+    with tab4:
+        st.header("🔒 Security Status")
+        
+        # Network Isolation Check
+        st.subheader("Network Isolation Verification")
+        test_results_path = "/app/logs/test_results.json"
+        
+        col_sec1, col_sec2 = st.columns(2)
+        
+        with col_sec1:
+            if os.path.exists(test_results_path):
+                try:
+                    with open(test_results_path, 'r') as f:
+                        test_data = json.load(f)
+                    
+                    # Check summary
+                    summary_test = test_data.get('summary', {})
+                    passed = summary_test.get('passed', 0)
+                    failed = summary_test.get('failed', 0)
+                    
+                    if failed == 0 and passed > 0:
+                         st.success(f"✅ Secure Enclave Verified ({passed} tests passed)")
+                    else:
+                         st.error(f"❌ Security Verification FAILED ({failed} tests failed)")
+                         
+                    with st.expander("View Verification Report"):
+                        st.json(test_data)
+                except Exception as e:
+                    st.warning(f"Could not parse test results: {e}")
+            else:
+                st.info("⚠️ No security verification report found. Run security tests.")
+    
+        with col_sec2:
+             st.markdown("**Access Control Mode:** 🔐 Localhost Only")
+             st.markdown("**Egress Policy:** 🛑 Deny All (except ArXiv)")
+
+        # Forensic Logs
+        st.subheader("Forensic Log Stream")
+        log_path = "/app/logs/audit.jsonl"
+        if os.path.exists(log_path):
+            logs = []
+            try:
+                 with open(log_path, 'r') as f:
+                     lines = f.readlines()
+                     for line in lines[-50:]:
+                         try:
+                             logs.append(json.loads(line))
+                         except: 
+                             pass
+                 if logs:
+                     st.dataframe(pd.DataFrame(logs), use_container_width=True)
+            except:
+                pass
+
+if __name__ == "__main__":
+    main()

@@ -29,19 +29,38 @@ class CuratorAgent:
         threat_text = "\n\n".join([f"- [{t.severity}/5] {t.title}: {t.summary_tldr} ({t.attack_type})" for t in threats])
         
         prompt = f"""
-        You are the Curator for the AI Safety Radar.
-        
+        Generate an academic research digest (NOT a threat briefing):
+
+        ## Format:
+
+        ### 🔬 New Attack Research (X papers)
+        - **[Paper Title]** by [Authors]: [1-sentence contribution] → [Affected systems]
+
+        ### 🛡️ New Defense Research (X papers)
+        - **[Paper Title]**: [Defense mechanism] → [Effectiveness: X% improvement]
+
+        ### 📊 Research Trends
+        [2-3 sentences on: common themes, gaps in literature, emerging directions]
+
+        ### 🔔 Noteworthy Findings
+        - [Highlight 1-2 most impactful discoveries this period]
+
+        ## Example Output:
+        ### 🔬 New Attack Research (2 papers)
+        - **Universal Jailbreak via Gradient-Based Suffix Optimization**: Automated adversarial suffix generation achieving 90% success rate on GPT-4 → Affects all instruction-tuned LLMs
+        - **Prompt Injection via Multi-Modal Embeddings**: Exploits vision-language models by hiding malicious instructions in images → Tested on GPT-4V, Claude 3
+
+        ### 🛡️ New Defense Research (1 paper)
+        - **Semantic Input Filters for LLM Security**: Embedding-based detection of malicious prompts → 85% detection, 5% false positives
+
+        ### 📊 Research Trends
+        Attack research currently outpaces defense development 2:1. Focus shifting from text-only to multi-modal attack vectors. No papers this period addressed deployment-time monitoring.
+
         Yesterday's Context:
         {previous_summary}
         
-        Today's New Threats:
+        Today's New Research Papers:
         {threat_text}
-        
-        Task:
-        1. Write a compelling daily briefing (markdown) summarizing the new threats.
-        2. Highlight strict trends (e.g. "Surge in Vision Jailbreaks").
-        3. Select the top 3 most critical threats to highlight.
-        4. Integrate with previous context if relevant (e.g. "Continuing the trend from yesterday...").
         """
         
         return await self.llm_client.extract(

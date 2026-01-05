@@ -104,16 +104,6 @@ podman-compose up --build
 ### The Data Diode Pattern
 The system uses a decoupled architecture to ensure the **Agent Core** (which executes potentially dangerous prompts) is completely air-gapped from the Internet.
 
-```mermaid
-graph TD
-    subgraph Public["Public Network"]
-        ArXiv["ArXiv API"]
-    end
-
-    subgraph "Ingestion Zone (Public IO)"
-        Ingestion["Ingestion Service"]
-        Ingestion -->|1. Fetch| ArXiv
-    end
 
 ```mermaid
 graph TD
