@@ -1,10 +1,10 @@
-# Project State - January 4, 2026
+# Project State - January 5, 2026
 
 ## Executive Summary
 
 **Project Goal:** AI Security research news aggregator  
-**Current Status:** 🔴 NOT FUNCTIONAL - Zero ArXiv papers being processed  
-**Completion:** ~60% (dashboard works, ingestion pipeline broken)
+**Current Status:** 🟢 FUNCTIONAL - ArXiv papers being ingested and processed  
+**Completion:** ~85% (ingestion pipeline fixed, papers being analyzed)
 
 ---
 
@@ -30,29 +30,50 @@
 - ✅ Status updates (visible in dashboard)
 - ✅ Error handling and ACK logic
 
+### Ingestion Pipeline (FIXED 2026-01-05)
+- ✅ ArXiv papers fetched (10 per cycle)
+- ✅ FilterAgent with LLM analyzing papers
+- ✅ Papers accepted with confidence scores
+- ✅ NEW log format showing reasoning
+
 ---
 
-## What's Broken 🔴
+## Recent Fix: Ingestion Pipeline (2026-01-05)
 
-### Critical Issue: Zero ArXiv Paper Ingestion
+### Problem Was:
+Containers running stale code despite source changes.
 
-**Problem:**  
-Ingestion service fetches 10 papers from ArXiv but rejects ALL with "not security research".
-
-**Evidence:**
+### Fix Applied:
+```bash
+podman-compose down
+podman-compose build --no-cache ingestion_service
+podman-compose build --no-cache agent_core
+podman-compose up -d
 ```
-INFO:__main__:⏭  REJECTED (not security research): Towards Provably Secure Generative AI...
-INFO:__main__:Ingestion cycle complete. Queued 0 papers.
+
+### Evidence of Fix:
+```
+INFO:__main__:  ✅ ACCEPTED (confidence: 0.97)
+INFO:__main__:     Reasoning: 1. **Safety-Relevant Keywords Identified**...
+INFO:__main__:  ✅ ACCEPTED (confidence: 0.98)
 ```
 
-**Impact:**  
-Dashboard shows only 2 manually inserted test papers. Core project goal (track new AI security research) is NOT achieved.
+### Current Metrics:
+- Pending papers: 10
+- Analyzed papers: 3
+- All 4 containers running healthy
 
-**Suspected Root Causes:**
-1. FilterAgent prompt too conservative (rejects papers with academic language)
-2. Ingestion may not be calling FilterAgent LLM (using old code)
-3. Code changes not deployed (container restart issue)
-4. PYTHONPATH may not affect ingestion service correctly
+---
+
+## What Needs Improvement 🟡
+
+### Performance
+- LLM calls are slow (~30-60s per paper with ministral-3:8b on Jetson)
+- Consider batching or caching for repeated queries
+
+### Minor Issues
+- Pydantic deprecation warning for `class Config` (should use `ConfigDict`)
+- `datetime.utcnow()` deprecation (non-critical)
 
 ---
 

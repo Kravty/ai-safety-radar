@@ -995,3 +995,78 @@ $ uv run pytest tests/agents/test_filter_agent.py -v
 - ✅ Comprehensive test coverage for both agents
 - ✅ Tests validate Pydantic validators work correctly
 - ✅ All tests use mocks (no external LLM calls needed)
+
+## [2026-01-05 10:00] - fix-ingestion-pipeline-container-deployment
+
+**Context:** Critical ingestion issue - code was correct but containers running stale version.
+
+**Root Cause:** Containers were running old code despite source changes. The images needed full rebuild with `--no-cache` to pick up latest code.
+
+**Fix Applied:**
+
+### Phase 1: Container Rebuild
+```bash
+podman-compose down
+podman-compose build --no-cache ingestion_service
+podman-compose build --no-cache agent_core
+podman-compose up -d
+```
+
+### Phase 2: Code Verification
+Verified NEW code loaded in containers:
+```bash
+$ podman exec ai-safety-radar_ingestion_service_1 python -c "
+import inspect
+from ai_safety_radar.scripts.run_ingestion_service import run_ingestion_cycle
+source = inspect.getsource(run_ingestion_cycle)
+if 'confidence_score' in source:
+    print('✅ NEW code loaded')
+"
+# Output: ✅ NEW code loaded (has confidence_score)
+```
+
+### Phase 3: Ingestion Trigger & Results
+```bash
+# Cleared processed cache
+$ podman exec ai-safety-radar_redis_1 redis-cli EVAL "..." 0
+# Triggered ingestion
+$ podman exec ai-safety-radar_redis_1 redis-cli PUBLISH agent:trigger ingest
+```
+
+**Evidence - NEW Log Format Working:**
+```
+INFO:__main__:  ✅ ACCEPTED (confidence: 0.97)
+INFO:__main__:     Reasoning: 1. **Safety-Relevant Keywords Identified**: The paper discusses...
+INFO:__main__:  ✅ ACCEPTED (confidence: 0.98)
+INFO:__main__:  ✅ ACCEPTED (confidence: 0.98)
+INFO:__main__:  ✅ ACCEPTED (confidence: 0.97)
+```
+
+**Final Queue Status:**
+- Pending papers: 10
+- Analyzed papers: 3
+- All 4 containers running healthy
+
+**Container Status:**
+```
+ai-safety-radar_redis_1: Up 9 minutes
+ai-safety-radar_ingestion_service_1: Up 9 minutes
+ai-safety-radar_agent_core_1: Up 9 minutes
+ai-safety-radar_dashboard_1: Up 9 minutes
+```
+
+**Key Learnings:**
+1. Container rebuilds with `--no-cache` are essential after code changes
+2. Volume mounts for `/app/src` help but packages must be reinstalled
+3. Always verify code deployment with `inspect.getsource()` check
+4. NEW log format (confidence scores + reasoning) confirms correct code
+
+**Success Criteria Met:**
+- ✅ Containers rebuilt with --no-cache
+- ✅ New code verified in container
+- ✅ Ingestion logs show confidence scores (NEW format)
+- ✅ Papers accepted from ArXiv (10 pending)
+- ✅ Papers being analyzed by agent_core (3 analyzed)
+- ✅ Dashboard accessible at http://localhost:8501
+
+**Files Modified:** None (deployment fix only)
