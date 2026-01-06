@@ -1,169 +1,280 @@
-# Project State - January 5, 2026
+# Operator's Guide — AI Safety Radar
 
-## Executive Summary
+## Current System State
 
-**Project Goal:** AI Security research news aggregator with 80/20 Pareto filtering  
-**Current Status:** 🟢 **PRODUCTION-READY**  
-**Completion:** ~95% (all core features working)
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Redis | ✅ Running | Persistent volume |
+| ingestion_service | ✅ Running | gpt-5-nano for filtering |
+| agent_core | ✅ Running | gpt-5-mini for analysis |
+| dashboard | ✅ Running | http://localhost:8501 |
 
-**Recent Achievement:** Implemented strict two-stage filtering inspired by N. Carlini's adversarial ML corpus. Reduced acceptance rate from 80% to 40%, dramatically improving signal-to-noise ratio.
+**Models:** gpt-5-nano (filter) + gpt-5-mini (analysis)  
+**Provider:** OpenAI via Podman secrets
 
----
+## Architecture Summary
 
-## What Works ✅
-
-### Complete System (All Components)
-- ✅ Streamlit dashboard with real-time metrics
-- ✅ ArXiv ingestion with strict filtering (40% acceptance rate)
-- ✅ Multi-agent analysis pipeline (Filter→Extract→Critic→Curator)
-- ✅ Redis Streams for reliable job queueing
-- ✅ Content-based deduplication
-- ✅ Forensic logging and audit trail
-- ✅ Docker/Podman containerization
-- ✅ Centralized configuration (config.py)
-
-### Filtering System (NEW - 2026-01-05)
-- ✅ Two-stage filtering (regex + LLM)
-- ✅ 60% reduction in LLM calls
-- ✅ 80/20 Pareto rule enforcement
-- ✅ Kill list for domain-specific papers
-- ✅ ML context anchors for ambiguous terms
-- ✅ GenAI boost for LLM security papers
-- ✅ 10/10 filter logic tests passing
-
----
-
-## What's Optimized (No Critical Issues) 🟢
-
-All major functionality working. Minor improvements possible:
-- ⚠️ Could add author reputation scoring
-- ⚠️ Could implement citation graph analysis
-- ⚠️ Could add weekly email digest
-- ⚠️ Pydantic deprecation warning (cosmetic)
-
----
-
-## Architecture
-
-### Data Flow
-
-```
-ArXiv API → Ingestion Service → papers:pending → Agent Core → papers:analyzed → Dashboard
-            (FilterAgent?)        (Redis Stream)  (FilterAgent)    (Redis Stream)
+```mermaid
+flowchart LR
+    ArXiv[(ArXiv)] --> Ingestion[ingestion_service]
+    Ingestion -->|papers:pending| Redis[(Redis)]
+    Redis -->|consume| Agent[agent_core]
+    Agent -->|papers:analyzed| Redis
+    Agent <-->|API| OpenAI[OpenAI]
+    Redis --> Dashboard[dashboard :8501]
 ```
 
-**Current Bottleneck:** Ingestion Service (0 papers queued)
+## Configuration
 
-### AI Agents
+### Model Selection
 
-1. **FilterAgent** - Determines if paper is AI Security relevant
-   - Model: ministral-3:8b (Ollama on Jetson)
-   - Status: 🔴 Either not being called OR too conservative
+**File:** `config.yaml`
 
-2. **ExtractionAgent** - Extracts threat details from paper
-   - Model: ministral-3:8b
-   - Status: ✅ Working (tested with manual papers)
+```yaml
+llm:
+  filter_model: "gpt-5-nano"      # FilterAgent
+  analysis_model: "gpt-5-mini"    # Extraction/Critic/Curator
+```
 
-3. **CriticAgent** - Validates extraction quality
-   - Model: ministral-3:8b
-   - Status: ✅ Working
+**Priority:** Environment vars > `config.yaml` > code defaults
 
-4. **CuratorAgent** - Generates weekly digest
-   - Model: ministral-3:8b
-   - Status: ✅ Working (triggered after N papers)
+**Verify effective config:**
+```bash
+podman logs ai-safety-radar_ingestion_service_1 | grep EFFECTIVE_CONFIG
+# Expected: effective_filter_model=gpt-5-nano effective_analysis_model=gpt-5-mini provider=openai
+```
 
----
+### Filter Thresholds
 
-## Key Metrics (Current)
+```yaml
+filter:
+  regex_threshold: 25        # Below = auto-reject
+  auto_accept_threshold: 65  # Above = auto-accept
+```
 
-**As of 2026-01-05:**
-- **Ingestion Acceptance Rate:** 40% (strict filtering)
-- **Filter Mode:** Strict (80/20 Pareto rule)
-- **LLM Efficiency:** 60% fewer calls (regex pre-filter)
-- **Dashboard Uptime:** 100%
-- **Agent Core Uptime:** 100%
-- **Ingestion Success Rate:** 100% (of accepted papers)
+## Operational Workflows
 
-**Quality Metrics:**
-- False Positive Rate: ~5% (few irrelevant papers slip through)
-- Test Coverage: 18 tests (filter_logic, filter_agent, extraction_agent)
+### Normal Weekly Operation
 
----
+System runs automatically. Papers fetched every 6 hours (configurable).
 
-## Code Quality Status
+**Monitor:**
+```bash
+# Queue lengths
+podman exec ai-safety-radar_redis_1 redis-cli XLEN papers:pending
+podman exec ai-safety-radar_redis_1 redis-cli XLEN papers:analyzed
 
-### Agent Standardization (Updated 2026-01-05)
+# Recent processing
+podman logs --tail 20 ai-safety-radar_agent_core_1 | grep -E "SAVED|Processing"
+```
 
-**All agents now follow Instructor + Pydantic v2 best practices:**
+### Manual Ingestion Trigger
 
-- ✅ **FilterAgent**: Uses Instructor + Pydantic v2 (already compliant)
-- ✅ **ExtractionAgent**: Refactored to use Instructor + Pydantic v2 (2026-01-05)
-- ✅ **CriticAgent**: Uses Instructor + Pydantic v2 (already compliant)
-- ✅ **CuratorAgent**: Uses Instructor + Pydantic v2 (already compliant)
+```bash
+podman exec ai-safety-radar_redis_1 redis-cli PUBLISH agent:trigger ingest
+```
 
-**Benefits Achieved:**
-- Type-safe LLM responses with automatic validation
-- Automatic retry on validation errors (Instructor feature)
-- Reduced code complexity (ExtractionAgent: 122→118 lines, cleaner)
-- Consistent patterns across all agents
-- Better error messages and debugging
-- Compatible with ministral-3:8b (8B local model)
+### Backfill (30-60 days)
 
-**Model Improvements:**
-- ✅ ThreatSignature model now has Pydantic validator for severity field
-- ✅ Accepts both string ("Critical", "High") and int (1-5) formats
-- ✅ Automatic conversion handled by Pydantic v2 `@field_validator`
+```bash
+# 30-day smoke test
+podman exec -it ai-safety-radar_ingestion_service_1 \
+  python -m ai_safety_radar.scripts.backfill_once \
+  --days-back 30 --max-results 100
 
----
+# Full 60-day backfill
+podman exec -it ai-safety-radar_ingestion_service_1 \
+  python -m ai_safety_radar.scripts.backfill_once \
+  --days-back 60 --max-results 200
+```
 
-## Technical Debt (Minor)
+**Expected:** ~38% acceptance rate, ~15 min for 200 papers
 
-1. **Pydantic Deprecation Warning**
-   - `class Config` should use `ConfigDict`
-   - Non-critical, cosmetic fix
+### Safe Reset (Without Breaking Consumer Groups)
 
-2. **datetime.utcnow() Deprecation**
-   - Should use timezone-aware datetime
-   - Non-critical
+```mermaid
+flowchart TD
+    A[Need to reset?] --> B{What to reset?}
+    B -->|Streams only| C[Delete streams]
+    B -->|Everything| D[Delete streams + markers]
+    
+    C --> E[DEL papers:pending papers:analyzed]
+    D --> E
+    D --> F[Delete processed:* keys]
+    
+    E --> G[Recreate consumer group]
+    F --> G
+    G --> H[XGROUP CREATE papers:pending agent_group 0 MKSTREAM]
+    H --> I[Restart agent_core]
+```
 
----
+**Commands:**
+```bash
+# Delete streams
+podman exec ai-safety-radar_redis_1 redis-cli DEL papers:pending papers:analyzed
 
-## Future Enhancements
+# Clear processed markers (if re-processing same papers)
+podman exec ai-safety-radar_redis_1 redis-cli --scan --pattern "processed:*" | \
+  xargs -r podman exec -i ai-safety-radar_redis_1 redis-cli DEL
 
-### Optional Improvements
-1. **Author Reputation Scoring** - Auto-accept papers from known researchers (Carlini, Song, etc.)
-2. **Citation Graph Analysis** - Boost papers cited by high-impact research
-3. **Weekly Email Digest** - Send summary to subscribers
-4. **Fine-tune Thresholds** - Adjust regex scores based on user feedback
+# Recreate consumer group
+podman exec ai-safety-radar_redis_1 redis-cli \
+  XGROUP CREATE papers:pending agent_group 0 MKSTREAM
 
----
+# Restart
+podman-compose restart agent_core
+```
 
-## Environment
+**⚠️ Never use `FLUSHDB`** — breaks consumer groups.
 
-- **OS:** Podman containers on Linux
-- **LLM:** ministral-3:8b on Jetson AGX Orin (192.168.1.37:11434)
-- **Redis:** 7.x Alpine
-- **Python:** 3.11
-- **Framework:** LangGraph for agent workflows
+## Health Checks
 
----
+### Quick Status
+
+```bash
+# All containers running?
+podman ps --filter name=ai-safety-radar --format "{{.Names}}: {{.Status}}"
+
+# Queue lengths
+echo "Pending: $(podman exec ai-safety-radar_redis_1 redis-cli XLEN papers:pending)"
+echo "Analyzed: $(podman exec ai-safety-radar_redis_1 redis-cli XLEN papers:analyzed)"
+```
+
+### Is agent_core Processing?
+
+```bash
+# Check for recent activity
+podman logs --tail 50 ai-safety-radar_agent_core_1 | grep -E "Processing|SAVED|LLM_RESPONSE"
+
+# If no output, check for errors
+podman logs --tail 50 ai-safety-radar_agent_core_1 | grep -i error
+```
+
+### Consumer Group Health
+
+```bash
+podman exec ai-safety-radar_redis_1 redis-cli XINFO GROUPS papers:pending
+```
+
+**Healthy output:**
+```
+1) "name"
+2) "agent_group"
+3) "consumers"
+4) "1"
+5) "pending"
+6) "0"
+```
+
+## Troubleshooting Runbook
+
+```mermaid
+flowchart TD
+    A[Issue Detected] --> B{Symptoms?}
+    
+    B -->|pending > 0, analyzed = 0| C[Queue stuck]
+    B -->|NOGROUP error| D[Consumer group missing]
+    B -->|Temperature error| E[API parameter issue]
+    B -->|0 papers accepted| F[Filter too strict]
+    
+    C --> C1[Check agent_core logs]
+    C1 --> C2{Errors?}
+    C2 -->|Duplicates| C3[Clear processed:* keys]
+    C2 -->|LLM errors| C4[Check API key/quota]
+    C2 -->|No errors| C5[Restart agent_core]
+    
+    D --> D1[Recreate group]
+    D1 --> D2[XGROUP CREATE papers:pending agent_group 0 MKSTREAM]
+    
+    E --> E1[Restart containers]
+    E1 --> E2[podman-compose restart agent_core]
+    
+    F --> F1[Lower thresholds in config.yaml]
+    F1 --> F2[Restart ingestion_service]
+```
+
+### Specific Issues
+
+**NOGROUP Error:**
+```bash
+podman exec ai-safety-radar_redis_1 redis-cli \
+  XGROUP CREATE papers:pending agent_group 0 MKSTREAM
+```
+
+**All Papers Marked as Duplicates:**
+```bash
+podman exec ai-safety-radar_redis_1 redis-cli --scan --pattern "processed:*" | \
+  xargs -r podman exec -i ai-safety-radar_redis_1 redis-cli DEL
+podman-compose restart agent_core
+```
+
+**LLM Temperature Errors:**
+```bash
+# gpt-5 models don't support temperature=0.0
+# Fix is automatic; just restart
+podman-compose restart agent_core ingestion_service
+```
+
+**No Papers Accepted:**
+```bash
+# Check current thresholds
+grep -A5 "filter:" config.yaml
+
+# Lower thresholds
+# regex_threshold: 20 (was 25)
+# auto_accept_threshold: 55 (was 65)
+podman-compose restart ingestion_service
+```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/ai_safety_radar/agents/filter_logic.py` | Regex-based pre-filter (new) |
-| `src/ai_safety_radar/agents/filter_agent.py` | Two-stage FilterAgent |
-| `src/ai_safety_radar/config.py` | Centralized configuration |
-| `tests/agents/test_filter_logic.py` | 10 filter tests |
+| `config.yaml` | All configuration |
+| `docker-compose.yml` | Service definitions |
+| `src/ai_safety_radar/scripts/backfill_once.py` | Backfill CLI |
+| `src/ai_safety_radar/scripts/run_agent_core.py` | Agent main loop |
+| `src/ai_safety_radar/scripts/run_ingestion_service.py` | Ingestion main loop |
+| `logs/audit.jsonl` | Forensic audit trail |
 
----
+## Useful Commands Reference
 
-## Project Goal
+```bash
+# Start/stop
+podman-compose up -d
+podman-compose down
+podman-compose restart <service>
 
-**User's Intent:**
-> "Track NEW AI Security research papers from ArXiv"  
-> Weekly digest of top 20% relevant papers (80/20 Pareto rule)  
-> Focus on adversarial ML, jailbreaks, LLM security
+# Logs
+podman logs -f ai-safety-radar_agent_core_1
+podman logs --tail 100 ai-safety-radar_ingestion_service_1
 
-This is a **news aggregator** with **strict quality filtering**.
+# Redis
+podman exec ai-safety-radar_redis_1 redis-cli XLEN papers:pending
+podman exec ai-safety-radar_redis_1 redis-cli XLEN papers:analyzed
+podman exec ai-safety-radar_redis_1 redis-cli XINFO GROUPS papers:pending
+
+# Effective config
+podman logs ai-safety-radar_ingestion_service_1 | grep EFFECTIVE_CONFIG
+
+# Trigger ingestion
+podman exec ai-safety-radar_redis_1 redis-cli PUBLISH agent:trigger ingest
+
+# Tests
+uv run pytest tests/ -v
+```
+
+## Known Issues
+
+1. **gpt-5 Temperature** — Models don't support temperature=0.0; code skips parameter automatically
+2. **summary_tldr Length** — Increased to 500 chars to avoid validation errors
+3. **Duplicate Detection** — Papers may need `processed:*` keys cleared after reset
+
+## Metrics (Reference)
+
+| Metric | Typical Value |
+|--------|---------------|
+| Acceptance rate | 35-40% |
+| Processing time | ~30s/paper |
+| Backfill (200 papers) | ~15 min |
+| Cost (200 papers) | ~$0.05 |

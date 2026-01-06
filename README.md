@@ -1,204 +1,306 @@
-# The AI Safety Radar
+# AI Safety Radar
 
-**Autonomous Cyber Threat Intelligence Engine for AI Safety**
+An autonomous threat intelligence engine that monitors, filters, and analyzes AI security research from ArXiv.
 
-The AI Safety Radar is an agentic intelligence engine that autonomously monitors, analyzes, and categorizes emerging threats in the AI Safety and Security domain.
+## Key Features
 
-## 🎯 Project Status
-
-| Component | Status |
-|-----------|--------|
-| **Dashboard** | ✅ Functional |
-| **Agent Pipeline** | ✅ Working |
-| **ArXiv Ingestion** | ✅ Working (strict filtering) |
-| **Overall** | 🟢 **PRODUCTION-READY** |
-
-**Current Stats:**
-- **Acceptance Rate:** ~40% (strict 80/20 Pareto rule)
-- **Filter Mode:** Strict (top 20% of papers only)
-- **LLM Efficiency:** 60% fewer calls (regex pre-filter)
-
-**Dashboard:** http://localhost:8501
-
-## Features
-- **Autonomous Ingestion**: Monitors ArXiv, GitHub, and other sources.
-- **Agentic Analysis**: Uses LLMs (`LiteLLM` + `Instructor`) to extract structured threat signatures.
-- **Dual-Mode Operation**:
-  - **Cloud**: Uses OpenAI GPT-4o for high precision.
-  - **Local (Jetson)**: Uses Ollama (Llama 3 / Mistral) for privacy and edge deployment.
-- **Morden Stack**: Built with `langgraph`, `pydantic v2`, and `uv`.
-- **Intelligence Dashboard**: Real-time Streamlit UI for threat monitoring and security status.
-- **Forensic & Automated Docs**: Zero-trust audit logging and self-updating documentation.
-
-## 📚 Documentation
-- [MATS Portfolio](docs/MATS_PORTFOLIO.md): Detailed architecture, decisions, and future roadmap.
-- [Threat Model](docs/THREAT_MODEL.md): Security boundaries and experimental safety protocols.
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv) (Package Manager)
-- **Container Runtime**: Docker or [Podman](https://podman.io/) (with `podman-compose`)
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/your-username/ai-safety-radar.git
-   cd ai-safety-radar
-   ```
-
-2. **Install dependencies**
-   ```bash
-   uv sync
-   ```
-
-3. **Configure Environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your API keys
-   ```
-
-### Usage
-
-**Run the pipeline locally:**
-```bash
-uv run python -m ai_safety_radar.scripts.run_pipeline
-```
-*(Note: Implementation pending for the full pipeline entrypoint)*
-
-**Run tests:**
-```bash
-uv run pytest
-```
-
-**Type checking:**
-```bash
-uv run mypy src/ --strict
-```
-
-### Initial Setup (One-Time)
-Because the `ollama` service is isolated on an internal network, it cannot download models at runtime. You must pre-populate the model volume:
-
-```bash
-chmod +x scripts/setup_ollama.sh
-./scripts/setup_ollama.sh
-```
-
-### Running the Stack
-```bash
-docker-compose up --build
-```
-Access the **Intelligence Dashboard** at `http://localhost:8501`.
-
-## 🐳 Container Deployment (Docker/Podman)
-
-To run the full stack (replace `docker-compose` with `podman-compose` if using Podman):
-
-```bash
-docker-compose up --build
-# OR
-podman-compose up --build
-```
-
-## 🔍 Filtering Architecture (80/20 Pareto Rule)
-
-```mermaid
-graph TB
-    START[ArXiv Paper] --> REGEX[Regex Pre-filter<br/>filter_logic.py]
-    
-    REGEX -->|Score < 30| REJECT1[❌ AUTO-REJECT<br/>No LLM call]
-    REGEX -->|Score 30-70| LLM[🤖 LLM Validation<br/>FilterAgent]
-    REGEX -->|Score > 70| ACCEPT1[✅ AUTO-ACCEPT<br/>No LLM call]
-    
-    LLM -->|is_relevant=True| ACCEPT2[✅ ACCEPT]
-    LLM -->|is_relevant=False| REJECT2[❌ REJECT]
-    
-    ACCEPT1 --> QUEUE[papers:pending]
-    ACCEPT2 --> QUEUE
-    
-    style REJECT1 fill:#ffebee
-    style REJECT2 fill:#ffebee
-    style ACCEPT1 fill:#e8f5e9
-    style ACCEPT2 fill:#e8f5e9
-    style REGEX fill:#e3f2fd
-    style LLM fill:#fff3e0
-```
-
-**Key Features:**
-- **60% fewer LLM calls** - Regex handles obvious accept/reject
-- **Carlini-inspired logic** - Based on top adversarial ML researcher's corpus
-- **Configurable thresholds** - Adjust in `config.py`
-- **Kill list** - Auto-reject hardware, medical, battery papers
-- **ML anchors** - Ambiguous terms validated by context
-
-## ⚙️ Configuration
-
-All parameters centralized in `src/ai_safety_radar/config.py`.
-
-```python
-# Filter strictness (80/20 rule)
-FILTER_MODE=strict                # Options: permissive, balanced, strict
-FILTER_REGEX_THRESHOLD=30         # Below = auto-reject (no LLM)
-FILTER_AUTO_ACCEPT_THRESHOLD=70   # Above = auto-accept (no LLM)
-
-# LLM models
-LLM_MODEL=ministral-3:8b          # Local model on Jetson
-
-# Ingestion
-INGESTION_MAX_RESULTS=30          # Papers per fetch
-INGESTION_DAYS_BACK=14            # Look back period
-```
-
-Override via environment variables in `.env` or `docker-compose.yml`.
-
-## 🛡️ Security Architecture
-
-**SL4 Principles Applied**: Network Isolation, Least Privilege, Defense-in-Depth.
-
-### The Data Diode Pattern
-The system uses a decoupled architecture to ensure the **Agent Core** (which executes potentially dangerous prompts) is completely air-gapped from the Internet.
-
-
-```mermaid
-graph TD
-    subgraph Public["Public Network"]
-        ArXiv["ArXiv API"]
-    end
-
-    subgraph "Ingestion Zone (Public IO)"
-        Ingestion["Ingestion Service"]
-    end
-
-    subgraph "Internal Message Bus (No Internet)"
-        Redis[("Redis Streams")]
-    end
-
-    subgraph "Secure Enclave (Air-Gapped)"
-        Agent["Agent Core"]
-        Ollama["Ollama LLM"]
-    end
-
-    %% Data Flow Sequence
-    Ingestion -- "1. Fetch Papers" --> ArXiv
-    Ingestion -- "2. Push Job" --> Redis
-    Redis -- "3. Pull Job" --> Agent
-    Agent -- "4. Inference" --> Ollama
-    Agent -- "5. Push Result" --> Redis
-```
-
-- **Forensic Logging**: All prompts are hashed (SHA256) and logged to `audit.jsonl` for post-event analysis.
-- **Hardening**: Containers run as non-root user (`1000:1000`) with all capabilities dropped (`cap_drop: ["ALL"]`).
+- **Two-Stage Filtering** — Regex pre-filter + LLM validation (60% fewer API calls)
+- **Multi-Agent Pipeline** — Filter → Extract → Critic → Curator workflow
+- **OpenAI Integration** — gpt-5-nano (filter) + gpt-5-mini (analysis) via Podman secrets
+- **Real-time Dashboard** — Streamlit UI at `localhost:8501`
+- **Security-First** — Air-gapped agent core, least-privilege containers
+- **Backfill Tool** — One-command historical data population
 
 ## Architecture
 
-- **Ingestion**: Async `httpx` scrapers with strict two-stage filtering
-- **Filtering**: Regex pre-filter + LLM validation (80/20 Pareto rule)
-- **Orchestration**: `LangGraph` state machine
-- **Agents**: FilterAgent → ExtractionAgent → CriticAgent → CuratorAgent
-- **Data**: `Pydantic v2` models with `Instructor` for structured LLM output
-- **Storage**: Redis Streams for job queuing, content-based deduplication
+```mermaid
+flowchart LR
+    subgraph External
+        ArXiv[(ArXiv API)]
+        OpenAI[OpenAI API]
+    end
+
+    subgraph Containers
+        Ingestion[ingestion_service]
+        Redis[(Redis Streams)]
+        Agent[agent_core]
+        Dashboard[dashboard :8501]
+    end
+
+    ArXiv -->|fetch papers| Ingestion
+    Ingestion -->|papers:pending| Redis
+    Redis -->|consume| Agent
+    Agent -->|papers:analyzed| Redis
+    Agent <-->|gpt-5-nano/mini| OpenAI
+    Redis -->|read| Dashboard
+```
+
+### Agent Pipeline
+
+```mermaid
+flowchart TB
+    subgraph Ingestion Service
+        Fetch[Fetch ArXiv] --> PreFilter[Regex Pre-Filter]
+        PreFilter -->|score < 25| Reject1[❌ Auto-Reject]
+        PreFilter -->|score 25-65| LLM[FilterAgent<br/>gpt-5-nano]
+        PreFilter -->|score > 65| Accept1[✅ Auto-Accept]
+        LLM -->|relevant| Accept2[✅ Accept]
+        LLM -->|not relevant| Reject2[❌ Reject]
+    end
+
+    subgraph Agent Core
+        Accept1 & Accept2 --> Queue[papers:pending]
+        Queue --> Extract[ExtractionAgent<br/>gpt-5-mini]
+        Extract --> Critic[CriticAgent]
+        Critic --> Store[papers:analyzed]
+        Store --> Curator[CuratorAgent<br/>Weekly Digest]
+    end
+
+    Store --> Dashboard[Streamlit Dashboard]
+```
+
+## Quickstart
+
+### Prerequisites
+
+- Ubuntu 24.04 (or compatible Linux)
+- Podman + Podman Compose
+- OpenAI API key
+
+### 1. Clone and Configure
+
+```bash
+git clone https://github.com/your-username/ai-safety-radar.git
+cd ai-safety-radar
+```
+
+### 2. Create OpenAI Secret
+
+```bash
+# Create Podman secret (one-time setup)
+echo "sk-your-openai-key-here" | podman secret create openai_api_key -
+```
+
+### 3. Start Services
+
+```bash
+podman-compose up -d
+```
+
+### 4. Verify
+
+```bash
+# Check all containers running
+podman ps --filter name=ai-safety-radar
+
+# Check logs for successful startup
+podman logs ai-safety-radar_ingestion_service_1 | grep EFFECTIVE_CONFIG
+# Expected: EFFECTIVE_CONFIG effective_filter_model=gpt-5-nano effective_analysis_model=gpt-5-mini provider=openai
+```
+
+### 5. Access Dashboard
+
+Open http://localhost:8501
+
+## Configuration
+
+Configuration lives in `config.yaml` with environment variable overrides.
+
+```yaml
+llm:
+  filter_model: "gpt-5-nano"      # Fast/cheap for filtering
+  analysis_model: "gpt-5-mini"    # Quality for extraction/critic/curator
+
+filter:
+  mode: "balanced"                # permissive | balanced | strict
+  regex_threshold: 25             # Below = auto-reject
+  auto_accept_threshold: 65       # Above = auto-accept
+
+ingestion:
+  max_results: 30                 # Papers per fetch
+  days_back: 14                   # Look-back window
+```
+
+**Priority:** Environment vars > `config.yaml` > code defaults
+
+```bash
+# Override example
+ARXIV_MAX_RESULTS=100 podman-compose restart ingestion_service
+```
+
+## Secrets Management
+
+OpenAI API key is loaded via Podman secrets (not environment variables):
+
+```bash
+# Create secret
+echo "sk-..." | podman secret create openai_api_key -
+
+# Verify secret exists
+podman secret ls
+
+# Secret is mounted at /run/secrets/openai_api_key inside containers
+```
+
+**Security:** Secrets are never logged, never in env vars, never in docker-compose.yml.
+
+## Backfill (Historical Data)
+
+Populate the dashboard with 1-2 months of papers:
+
+```bash
+# Run backfill (60 days, 200 papers max)
+podman exec -it ai-safety-radar_ingestion_service_1 \
+  python -m ai_safety_radar.scripts.backfill_once \
+  --days-back 60 --max-results 200
+
+# Expected output:
+# 📊 BACKFILL SUMMARY
+# ============================================================
+#   Fetched:         200 papers
+#   Accepted:        ~77 papers (38%)
+#   Duration:        ~15 minutes
+```
+
+**Cost estimate:** ~$0.05 for 200 papers with gpt-5-nano/mini
+
+## Troubleshooting
+
+### NOGROUP Error
+
+```
+NOGROUP No such key 'papers:pending' or consumer group 'agent_group'
+```
+
+**Fix:** Recreate consumer group:
+```bash
+podman exec ai-safety-radar_redis_1 redis-cli \
+  XGROUP CREATE papers:pending agent_group 0 MKSTREAM
+```
+
+### Queue Stuck (pending > 0, analyzed = 0)
+
+**Check queue state:**
+```bash
+podman exec ai-safety-radar_redis_1 redis-cli XLEN papers:pending
+podman exec ai-safety-radar_redis_1 redis-cli XLEN papers:analyzed
+```
+
+**Check agent_core logs:**
+```bash
+podman logs --tail 50 ai-safety-radar_agent_core_1
+```
+
+**Common causes:**
+1. Consumer group missing → recreate (see above)
+2. All papers marked as duplicates → clear processed markers:
+   ```bash
+   podman exec ai-safety-radar_redis_1 redis-cli --scan --pattern "processed:*" | \
+     xargs -r podman exec -i ai-safety-radar_redis_1 redis-cli DEL
+   ```
+3. LLM errors → check for temperature/API errors in logs
+
+### 0 Papers Analyzed
+
+**Check filter is accepting papers:**
+```bash
+podman logs ai-safety-radar_ingestion_service_1 | grep -E "ACCEPTED|REJECTED"
+```
+
+**If acceptance rate too low:** Adjust thresholds in `config.yaml`:
+```yaml
+filter:
+  regex_threshold: 20      # Lower = accept more
+  auto_accept_threshold: 60
+```
+
+### Temperature Error (gpt-5 models)
+
+```
+Unsupported value: 'temperature' does not support 0.0
+```
+
+**Fix:** This is handled automatically. If you see this, restart containers:
+```bash
+podman-compose restart agent_core ingestion_service
+```
+
+### Safe Reset (Without Breaking Consumer Groups)
+
+**Never use `FLUSHDB`!** Instead:
+```bash
+# Delete streams
+podman exec ai-safety-radar_redis_1 redis-cli DEL papers:pending papers:analyzed
+
+# Clear processed markers
+podman exec ai-safety-radar_redis_1 redis-cli --scan --pattern "processed:*" | \
+  xargs -r podman exec -i ai-safety-radar_redis_1 redis-cli DEL
+
+# Recreate consumer group
+podman exec ai-safety-radar_redis_1 redis-cli \
+  XGROUP CREATE papers:pending agent_group 0 MKSTREAM
+```
+
+### Container Won't Start
+
+**Check secret exists:**
+```bash
+podman secret ls | grep openai_api_key
+```
+
+**Check logs:**
+```bash
+podman logs ai-safety-radar_ingestion_service_1
+```
+
+### Dashboard Shows No Data
+
+1. Check Redis has data: `redis-cli XLEN papers:analyzed`
+2. Check dashboard can reach Redis: `podman logs ai-safety-radar_dashboard_1`
+3. Restart dashboard: `podman-compose restart dashboard`
+
+## Development
+
+### Run Tests
+
+```bash
+uv run pytest tests/ -v
+```
+
+### Restart vs Rebuild
+
+| Change Type | Command |
+|-------------|---------|
+| Python code (`src/`) | `podman-compose restart <service>` |
+| `config.yaml` | `podman-compose restart <service>` |
+| `pyproject.toml` / `uv.lock` | `podman-compose build <service>` |
+| `Dockerfile` | `podman-compose build <service>` |
+
+Source code is bind-mounted (`./src:/app/src:ro`), so Python changes are live after restart.
+
+### Useful Commands
+
+```bash
+# View effective model config
+podman logs ai-safety-radar_ingestion_service_1 | grep EFFECTIVE_CONFIG
+
+# Monitor LLM calls in real-time
+podman logs -f ai-safety-radar_agent_core_1 | grep LLM_RESPONSE
+
+# Check Redis streams
+podman exec ai-safety-radar_redis_1 redis-cli XLEN papers:pending
+podman exec ai-safety-radar_redis_1 redis-cli XLEN papers:analyzed
+
+# Trigger manual ingestion
+podman exec ai-safety-radar_redis_1 redis-cli PUBLISH agent:trigger ingest
+```
+
+## Documentation
+
+- [Portfolio & Research Findings](docs/MATS_PORTFOLIO.md)
+- [Threat Model](docs/THREAT_MODEL.md)
+- [Operator's Guide](docs/PROJECT_STATE.md)
+- [Development Guide](docs/DEV.md)
 
 ## License
 
