@@ -145,93 +145,135 @@ def get_queue_status(metrics):
 
 # --- Sidebar Setup ---
 def setup_sidebar():
-    """Setup sidebar ONCE - call this function only at app start."""
+    """
+    Setup sidebar with progressive disclosure UX.
+    
+    Information hierarchy (inverted pyramid):
+    - Primary: Status + analyzed count (always visible)
+    - Secondary: Queue details (one click away)
+    - Tertiary: Advanced/Redis internals (collapsed)
+    """
     st.sidebar.title("🛡️ AI Safety Radar")
     
-    if st.sidebar.button("🔄 Refresh Data", help="Reload all dashboard data from Redis", use_container_width=True):
-        st.rerun()
-        
+    # =========================================
+    # PRIMARY: System Status (always visible)
+    # =========================================
+    st.sidebar.markdown("### 🎯 System Status")
+    
+    if not r_client:
+        st.sidebar.error("🔴 **Disconnected**")
+        st.sidebar.caption("Redis connection failed")
+        return
+    
+    # Get metrics
+    metrics = get_queue_metrics(r_client)
+    emoji, status_text, _ = get_queue_status(metrics)
+    
+    # Status indicator: Large, bold, colored
+    if status_text == "Complete":
+        st.sidebar.success(f"## {emoji} {status_text}")
+    elif status_text == "Processing":
+        st.sidebar.warning(f"## {emoji} {status_text}")
+    else:  # Stuck
+        st.sidebar.error(f"## {emoji} {status_text}")
+    
+    # Key metric: Threats Analyzed (prominent)
+    st.sidebar.metric(
+        label="Threats Analyzed",
+        value=metrics['analyzed_count'],
+        help="Papers successfully processed by the analysis pipeline"
+    )
+    
+    # Show pending only if non-zero (actionable info)
+    if metrics['lag'] > 0:
+        st.sidebar.metric(
+            label="Pending Analysis",
+            value=metrics['lag'],
+            help="Papers accepted by filter, waiting for agent_core"
+        )
+    
     st.sidebar.markdown("---")
     
-    # System Status Section
-    st.sidebar.subheader("📊 System Status")
+    # =========================================
+    # SECONDARY: Queue Details (collapsible)
+    # =========================================
+    with st.sidebar.expander("📊 Queue Details", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric(
+                "Pending",
+                metrics['lag'],
+                help="Awaiting analysis"
+            )
+        with col2:
+            st.metric(
+                "Total Queued",
+                metrics['stream_length'],
+                help="All papers ever queued (historical)"
+            )
+        
+        # Warning if stuck
+        if metrics['in_flight'] > 0:
+            idle_mins = metrics['oldest_pending_ms'] / 60000
+            if idle_mins > 10:
+                st.warning(f"⚠️ {metrics['in_flight']} items stuck for {idle_mins:.0f} min")
+            else:
+                st.info(f"🔄 {metrics['in_flight']} in progress")
     
-    # Redis Status
-    if r_client:
-        st.sidebar.markdown("🟢 **Redis:** Connected")
-    else:
-        st.sidebar.markdown("🔴 **Redis:** Disconnected")
+    # =========================================
+    # TERTIARY: Advanced Debugging (collapsed)
+    # =========================================
+    with st.sidebar.expander("🔧 Advanced", expanded=False):
+        st.caption("Redis stream internals (for debugging)")
+        st.json({
+            "consumer_lag": metrics['lag'],
+            "in_flight_unacked": metrics['in_flight'],
+            "stream_length": metrics['stream_length'],
+            "last_heartbeat": metrics['last_processed_ts'] or "N/A",
+            "last_doc_id": metrics['last_processed_id'] or "N/A"
+        })
         
-    # Queue Metrics with correct semantics
-    if r_client:
-        metrics = get_queue_metrics(r_client)
-        emoji, status_text, color = get_queue_status(metrics)
-        
-        st.sidebar.markdown(f"{emoji} **Queue Status:** {status_text}")
-        
-        # Detailed queue metrics
-        st.sidebar.markdown(f"""        
-**Stream length (historical):** {metrics['stream_length']}  
-**Remaining to process (lag):** {metrics['lag']}  
-**In-flight (unacked):** {metrics['in_flight']}  
-**Analyzed total:** {metrics['analyzed_count']}
-        """)
-        
-        # Heartbeat info
-        if metrics['last_processed_ts']:
-            st.sidebar.caption(f"Last processed: {metrics['last_processed_ts']}")
-    else:
-        st.sidebar.markdown("⚪ **Queue Status:** Unknown")
+        # Maintenance actions (hidden in advanced)
+        st.markdown("---")
+        st.caption("Maintenance")
+        trim_count = st.number_input("Keep last N messages", min_value=10, max_value=1000, value=100, key="trim_input")
+        if st.button("Trim Queue History", help="Remove old processed messages from stream"):
+            try:
+                trimmed = r_client.xtrim("papers:pending", maxlen=trim_count, approximate=True)
+                st.success(f"Trimmed {trimmed} messages")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Trim failed: {e}")
     
-    # Status Reference (clean markdown)
-    with st.sidebar.expander("ℹ️ Status Reference"):
-        st.markdown("""
-**Queue Status:**
-- 🟢 Complete: lag=0, in_flight=0
-- 🟡 Processing: lag>0 or in_flight>0
-- 🔴 Stuck: in_flight>0 for >10 minutes
-
-**Metrics Explained:**
-- **Stream length**: Total messages ever (historical)
-- **Lag**: Messages not yet delivered to consumer
-- **In-flight**: Delivered but not acknowledged
-- **Analyzed**: Successfully processed papers
-        """)
-        
     st.sidebar.markdown("---")
     
-    # Manual Controls Section
-    st.sidebar.subheader("🎮 Manual Controls")
+    # =========================================
+    # ACTIONS: Grouped at bottom
+    # =========================================
+    st.sidebar.markdown("### ⚡ Actions")
     
-    if r_client:
-        if st.sidebar.button("📥 Trigger Ingestion", help="Fetch latest AI security papers (30s)", use_container_width=True):
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("📥 Ingest", help="Fetch latest papers from ArXiv", use_container_width=True):
             r_client.publish("agent:trigger", "ingest")
             st.sidebar.success("✅ Started")
-            
-        if st.sidebar.button("⚙️ Process Queue", help="Force process pending papers", use_container_width=True):
+    with col2:
+        if st.button("⚙️ Process", help="Process pending papers", use_container_width=True):
             r_client.publish("agent:trigger", "process_all")
             st.sidebar.success("✅ Started")
-            
-        if st.sidebar.button("🗑️ Clear & Reset", help="⚠️ Delete all data", use_container_width=True):
-            if st.sidebar.checkbox("Confirm Delete"):
+    
+    if st.sidebar.button("🔄 Refresh", help="Reload dashboard data", use_container_width=True):
+        st.rerun()
+    
+    # Danger zone (extra confirmation)
+    with st.sidebar.expander("⚠️ Danger Zone", expanded=False):
+        st.caption("Destructive actions - use with caution")
+        if st.button("🗑️ Clear All Data", use_container_width=True):
+            if st.checkbox("I understand this deletes all analyzed threats"):
                 r_client.delete("papers:analyzed")
                 r_client.delete("curator:latest_summary")
-                st.sidebar.warning("⚠️ Cleared")
+                st.warning("Data cleared")
                 st.rerun()
-        
-        # Maintenance: Trim processed history
-        with st.sidebar.expander("🔧 Maintenance"):
-            st.caption("Trim old messages from streams (keeps recent N)")
-            trim_count = st.number_input("Keep last N messages", min_value=10, max_value=1000, value=100)
-            if st.button("Trim papers:pending", help="Remove old processed messages"):
-                try:
-                    trimmed = r_client.xtrim("papers:pending", maxlen=trim_count, approximate=True)
-                    st.success(f"Trimmed {trimmed} messages")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Trim failed: {e}")
-    else:
-        st.sidebar.error("Controls disabled (No Redis)")
 
 # --- Main App Entry Point ---
 def main():
