@@ -53,6 +53,29 @@ def get_stream_data(redis_client, stream_key, count=100):
         logging.error(f"Stream read error: {e}")
         return []
 
+def get_agent_status_display(redis_client):
+    """
+    Get agent status mapped to Status Reference legend.
+    
+    Returns:
+        tuple: (emoji, status_text, pending_count, analyzed_count)
+    """
+    if not redis_client:
+        return "🔴", "Error: Redis not connected", 0, 0
+    
+    try:
+        pending_count = redis_client.xlen("papers:pending") or 0
+        analyzed_count = redis_client.xlen("papers:analyzed") or 0
+        
+        if pending_count > 0:
+            # Papers in queue → Processing (yellow per Status Reference)
+            return "🟡", f"Processing", pending_count, analyzed_count
+        else:
+            # Queue empty → Idle (gray per Status Reference)
+            return "⚪", "Idle", pending_count, analyzed_count
+    except Exception as e:
+        return "🔴", f"Error: {str(e)}", 0, 0
+
 # --- Sidebar Setup ---
 def setup_sidebar():
     """Setup sidebar ONCE - call this function only at app start."""
@@ -72,30 +95,16 @@ def setup_sidebar():
     else:
         st.sidebar.markdown("🔴 **Redis:** Disconnected")
         
-    # Agent Core Status
-    agent_status_val = "unknown"
+    # Agent Core Status with consistent legend mapping
     if r_client:
-        agent_status_val = r_client.get("agent_core:status") or "unknown"
+        emoji, status_text, pending, analyzed = get_agent_status_display(r_client)
+        st.sidebar.markdown(f"{emoji} **Agent Core:** {status_text}")
         
-    status_emoji = {
-        "polling": "🟢",
-        "processing": "🟡",
-        "idle": "⚪",
-        "error": "🔴",
-        "unknown": "⚪"
-    }
-    st.sidebar.markdown(f"{status_emoji.get(agent_status_val, '⚪')} **Agent Core:** {agent_status_val.title()}")
-    
-    # Queue Metrics - Use XLEN for total stream counts
-    pending = 0
-    analyzed = 0
-    if r_client:
-        try:
-            pending = r_client.xlen("papers:pending")
-            analyzed = r_client.xlen("papers:analyzed")
-        except:
-            pass
-    st.sidebar.markdown(f"📊 **Queue:** {pending} pending, {analyzed} analyzed")
+        # Queue Metrics Summary
+        st.sidebar.markdown(f"📊 **Queue:** {pending} pending, {analyzed} analyzed")
+    else:
+        st.sidebar.markdown("⚪ **Agent Core:** Unknown")
+        st.sidebar.markdown("📊 **Queue:** - pending, - analyzed")
     
     # Status Reference (clean markdown)
     with st.sidebar.expander("ℹ️ Status Reference"):
@@ -105,10 +114,9 @@ def setup_sidebar():
 - 🔴 Disconnected: Service down
 
 **Agent Core:**
-- 🟢 Polling: Waiting for papers (normal)
-- 🟡 Processing: Actively analyzing
+- 🟡 Processing: Actively analyzing papers
 - ⚪ Idle: Queue empty, no work
-- 🔴 Error: Service crashed
+- 🔴 Error: Connection or processing failure
 
 **Queue:**
 - Pending: Awaiting analysis

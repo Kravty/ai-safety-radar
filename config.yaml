@@ -1,0 +1,61 @@
+# AI Safety Radar Configuration
+# Override values here instead of editing code
+
+llm:
+  # LLM model configuration
+  # For OpenAI: use gpt-5-nano (filter) and gpt-5-mini (analysis)
+  # For Ollama: use ministral-3:8b or similar local model
+  filter_model: "gpt-5-nano"           # Fast/cheap model for filtering
+  analysis_model: "gpt-5-mini"         # Quality model for extraction/critic/curator
+  
+  # Ollama fallback (when model doesn't start with gpt-)
+  ollama_base_url: "http://192.168.1.37:11434"
+  # Note: gpt-5-nano only supports temperature=1.0 (default)
+  temperature: 1.0
+
+ingestion:
+  # ArXiv ingestion parameters
+  max_results: 30                       # Papers per fetch cycle
+  days_back: 14                         # Look back period (days)
+  interval_seconds: 21600               # 6 hours = 21600s
+  
+  # BACKFILL MODE: Set to true for initial population
+  backfill_mode: false
+  backfill_days_back: 30                # 6 months for backfill
+  backfill_max_results: 100             # More papers during backfill
+  
+  # ArXiv query
+  query: >
+    (cat:cs.AI OR cat:cs.LG OR cat:cs.CR) AND 
+    (adversarial OR attack OR robustness OR security OR 
+     "red team" OR alignment OR safety OR jailbreak)
+
+filter:
+  # Filter strictness (NEWS AGGREGATOR: keep 20-30% of papers)
+  mode: "balanced"                      # Options: permissive, balanced, strict
+  
+  # Thresholds
+  regex_threshold: 25                   # Below = auto-reject (no LLM)
+  auto_accept_threshold: 65             # Above = auto-accept (no LLM)
+  min_confidence_accept: 0.7            # LLM confidence threshold (was 0.8)
+  
+  # Author reputation
+  boost_known_authors: true
+  known_authors:
+    - "Nicholas Carlini"
+    - "Dawn Song"
+    - "Ian Goodfellow"
+    - "Nicolas Papernot"
+    - "Florian Tramèr"
+    - "Aleksander Madry"
+    - "Andy Zou"
+    - "Zico Kolter"
+
+redis:
+  url: "redis://redis:6379/0"
+
+# Agent processing
+agent:
+  batch_size: 5                         # Papers to process per batch
+  poll_interval_seconds: 30             # How often to check for new papers
+  max_retries: 2                        # Retry failed papers

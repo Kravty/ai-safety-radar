@@ -20,9 +20,11 @@ class IngestionGraph:
     """Per-document ingestion workflow."""
     
     def __init__(self) -> None:
-        llm_client = LLMClient()
-        self.filter_agent = FilterAgent(llm_client)
-        self.extraction_agent = ExtractionAgent(llm_client)
+        # Use separate models: gpt-5-nano for filter (fast/cheap), gpt-5-mini for analysis (quality)
+        filter_client = LLMClient(role="filter")
+        analysis_client = LLMClient(role="analysis")
+        self.filter_agent = FilterAgent(filter_client)
+        self.extraction_agent = ExtractionAgent(analysis_client)
         self.dataset_manager = DatasetManager()
         
         self.workflow = self._build_graph()

@@ -59,40 +59,33 @@ async def mark_as_processed(redis_client, doc) -> None:
 
 def validate_analysis_result(paper_title: str, analysis: dict) -> bool:
     """
-    Verify analysis actually found security content.
-    Returns False if analyst invented threats.
+    Verify analysis has concrete findings.
+    For NEWS AGGREGATOR: Accept papers with actual security content, even if future-looking.
+    Only reject if missing core fields or LLM clearly hallucinated.
     """
     summary = analysis.get("summary_tldr", "") or analysis.get("description", "")
     
-    # Red flags: Speculative language
-    speculative_phrases = [
-        "could enable", "might allow", "potential for",
-        "if exploited", "theoretical vulnerability",
-        "may pose a risk"
-    ]
-    
-    if any(phrase in summary.lower() for phrase in speculative_phrases):
-        # Allow speculation IF it's about a concrete finding (nuanced check usually needed, but let's be strict per user)
-        # Actually user said "Reject speculated threats", implying the paper itself didn't claim it.
-        # But some valid papers use "could enable" for future work. 
-        # User example: "Could enable adversarial redundancy injection..." (NOT in paper)
-        # So we reject if the *summary* relies on it.
-        pass # Logging handled in caller
-        # return False # User request: "Returns False if analyst invented threats."
-        # However, checking against *paper content* is hard here without content.
-        # We rely on the LLM being truthful to the prompt "DO NOT invent".
-        # This function acts as a safety against LLM hallucination in the summary.
-        return False
-    
-    # Must have concrete findings
-    # Pydantic model ensures fields exist, but we check for non-empty content
+    # Must have concrete findings (not empty placeholders)
     required_elements = [
         bool(analysis.get("attack_type")),
         bool(analysis.get("affected_models")),
-        len(summary) > 20
+        len(summary) > 20,
     ]
     
-    return all(required_elements)
+    if not all(required_elements):
+        return False
+    
+    # Additional check: Reject if summary is completely generic (LLM hallucination)
+    generic_placeholders = [
+        "no specific attack mentioned",
+        "generic machine learning system",
+        "unspecified vulnerability"
+    ]
+    
+    if any(phrase in summary.lower() for phrase in generic_placeholders):
+        return False
+    
+    return True
 
 async def run_curator_workflow(redis_client):
     """Generate threat landscape summary from analyzed papers."""

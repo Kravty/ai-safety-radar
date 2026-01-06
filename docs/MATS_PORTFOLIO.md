@@ -78,7 +78,7 @@ flowchart TB
 
 ```bash
 # One-time setup
-echo "sk-..." | podman secret create openai_api_key -
+printf "sk-..." | podman secret create openai_api_key -
 ```
 
 ### 4. Model Selection: gpt-5-nano / gpt-5-mini
@@ -198,7 +198,7 @@ git clone https://github.com/your-username/ai-safety-radar.git
 cd ai-safety-radar
 
 # Create secret
-echo "sk-your-key" | podman secret create openai_api_key -
+printf "sk-your-key" | podman secret create openai_api_key -
 
 # Start
 podman-compose up -d

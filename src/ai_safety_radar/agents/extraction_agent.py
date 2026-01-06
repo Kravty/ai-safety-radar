@@ -30,8 +30,8 @@ class ExtractionResult(BaseModel):
     )
     summary_tldr: str = Field(
         ..., 
-        max_length=280,
-        description="1 sentence core contribution (max 280 chars)"
+        max_length=500,
+        description="1-2 sentence core contribution (max 500 chars)"
     )
     summary_detailed: str = Field(
         ...,

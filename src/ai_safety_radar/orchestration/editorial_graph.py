@@ -23,9 +23,10 @@ class EditorialGraph:
     MAX_RETRIES = 3
     
     def __init__(self) -> None:
-        llm_client = LLMClient()
-        self.curator_agent = CuratorAgent(llm_client)
-        self.critic_agent = CriticAgent(llm_client)
+        # Use analysis model (gpt-5-mini) for curator and critic
+        analysis_client = LLMClient(role="analysis")
+        self.curator_agent = CuratorAgent(analysis_client)
+        self.critic_agent = CriticAgent(analysis_client)
         
         self.workflow = self._build_graph()
         

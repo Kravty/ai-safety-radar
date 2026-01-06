@@ -78,7 +78,7 @@ cd ai-safety-radar
 
 ```bash
 # Create Podman secret (one-time setup)
-echo "sk-your-openai-key-here" | podman secret create openai_api_key -
+printf "sk-your-openai-key-here" | podman secret create openai_api_key -
 ```
 
 ### 3. Start Services
@@ -134,7 +134,7 @@ OpenAI API key is loaded via Podman secrets (not environment variables):
 
 ```bash
 # Create secret
-echo "sk-..." | podman secret create openai_api_key -
+printf "sk-..." | podman secret create openai_api_key -
 
 # Verify secret exists
 podman secret ls

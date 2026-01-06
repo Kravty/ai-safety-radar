@@ -2,31 +2,66 @@
 __pycache__/
 *.py[cod]
 *$py.class
-.venv/
+*.pyo
 *.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+.python-version
 
-# Logs
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Linting
+.ruff_cache/
+
+# Logs (keep directory, ignore contents)
 logs/*.log
 logs/*.jsonl
 logs/test_results.json
 
-# Temporary files
-.pytest_cache/
-.mypy_cache/
-*.swp
-*.swo
-.ruff_cache/
-
-# Environment
+# Environment & Secrets
 .env
-.env.local
+.env.*
+.secrets
+secrets/
+*.pem
+*.key
 
-# Podman/Docker volumes
+# Podman/Docker
 *_data/
+dump.rdb
+appendonly.aof
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
-# Local Dev
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Jupyter
 .ipynb_checkpoints/
+
+# Temporary
+*.tmp
+*.temp
+/tmp/

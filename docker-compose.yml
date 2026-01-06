@@ -35,6 +35,8 @@ services:
   ingestion_service:
     build: .
     command: python -m ai_safety_radar.scripts.run_ingestion_service
+    secrets:
+      - openai_api_key
     networks:
       - public_io_net
       - internal_msg_net
@@ -42,10 +44,8 @@ services:
       - PYTHONPATH=/app/src
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://192.168.1.37:11434
-      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
-      - LLM_MODEL=ministral-3:8b
       - ARXIV_MAX_RESULTS=${ARXIV_MAX_RESULTS:-10}
-      - OPENAI_API_KEY=${OPENAI_API_KEY} 
+      # Model selection comes from config.yaml (gpt-5-nano/gpt-5-mini) 
     volumes:
       - ./logs:/app/logs:rw
       - ./src:/app/src:ro
@@ -61,6 +61,8 @@ services:
   agent_core:
     build: .
     command: python -m ai_safety_radar.scripts.run_agent_core
+    secrets:
+      - openai_api_key
     networks:
       - internal_msg_net
       - public_io_net
@@ -69,10 +71,8 @@ services:
       - PYTHONPATH=/app/src
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://192.168.1.37:11434
-      - LLM_PROVIDER=ollama
-      - LLM_MODEL=ministral-3:8b
       - LOG_LEVEL=INFO
-      # No API Keys needed as it uses Ollama or local tools
+      # Model selection comes from config.yaml (gpt-5-nano/gpt-5-mini)
     volumes:
       - ./logs:/app/logs:rw
       - ./src:/app/src:ro
@@ -96,8 +96,7 @@ services:
     environment:
       - PYTHONPATH=/app/src
       - REDIS_URL=redis://redis:6379/0
-      - LLM_PROVIDER=ollama
-      - LLM_MODEL=ministral-3:8b # Not used directly but good for config consistency
+      # Model selection comes from config.yaml (gpt-5-nano/gpt-5-mini)
     volumes:
       - ./logs:/app/logs:ro # Read-only access to logs
       - ./src:/app/src:ro
@@ -108,3 +107,7 @@ services:
 volumes:
   ollama_data:
   redis_data:
+
+secrets:
+  openai_api_key:
+    external: true

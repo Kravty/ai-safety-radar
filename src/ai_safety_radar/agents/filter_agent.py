@@ -79,43 +79,42 @@ class FilterAgent:
                 reasoning=f"Strong match (score={regex_result['score']}): {'; '.join(regex_result['reasons'])}"
             )
         
-        # STAGE 2: LLM validation (only for borderline cases: score 30-70)
-        prompt = f"""You are filtering papers for an AI Security research aggregator applying the 80/20 Pareto rule.
+        # STAGE 2: LLM validation (only for borderline cases: score 25-65)
+        prompt = f"""You are a research assistant filtering papers for an AI Security news aggregator.
 
-**Pre-filter analysis:** Score={regex_result['score']}, Reasons={regex_result['reasons']}
+**Goal:** Accept papers that help researchers STAY UP-TO-DATE with AI security developments.
 
 **Paper:**
 Title: {title}
-Abstract: {abstract[:500]}
+Abstract: {abstract[:600]}
 
-**ULTRA-STRICT CRITERIA (Top 20% Only):**
+**Pre-filter Score:** {regex_result['score']} (Reasons: {regex_result['reasons']})
 
-✅ ACCEPT **ONLY** if paper demonstrates:
-1. **Concrete attacks** - Jailbreaks, adversarial examples, prompt injection, model extraction
-2. **Security defenses** - Adversarial training, input validation, robustness methods
-3. **Empirical security research** - Red teaming results, attack success rates, vulnerability discovery
+**ACCEPT if paper demonstrates:**
+1. **Concrete attacks:** Jailbreaks, adversarial examples, prompt injection, model extraction, poisoning attacks
+2. **Security defenses:** Adversarial training, input validation, alignment methods, safety evals
+3. **Empirical security research:** Red teaming, attack benchmarks, vulnerability analysis
+4. **Privacy/Safety methods:** Differential privacy in ML context, federated learning security
+5. **Novel security insights:** Even if theoretical, provides actionable security knowledge
 
-❌ AUTO-REJECT if:
-1. **Pure theory** - "Mathematical foundations", "theoretical framework", "geometry of reasoning"
-2. **Tangential mentions** - "Applications to AI safety" without concrete security analysis
-3. **Domain research** - Medical, physics, biology papers that use ML but aren't about ML security
-4. **Optimization papers** - Faster training, better accuracy WITHOUT security angle
-5. **Interpretability** - Feature attribution, explainability UNLESS tied to attack detection
+**REJECT if:**
+1. **Pure optimization:** Faster training, better accuracy WITHOUT security implications
+2. **Domain research:** Medical/finance/IoT that happens to use ML but isn't about ML security
+3. **General software engineering:** Code generation, testing, documentation
+4. **No security angle:** Interpretability, fairness, efficiency without adversarial context
 
-**CRITICAL TEST:**
-- Would a red team researcher cite this paper in a security report?
-- Does the paper show HOW to attack or defend AI systems?
-- Are there empirical results (success rates, benchmarks, exploits)?
+**Borderline Cases (score 40-65):**
+- If paper mentions attacks/defenses but focus is elsewhere → ACCEPT (better to include than miss)
+- If paper is by known security researcher → ACCEPT
+- If paper has empirical results on security metrics → ACCEPT
 
-If NO to all 3 → **REJECT**.
-
-**Your decision:** ACCEPT or REJECT with reasoning (50-150 words)."""
+**Your decision:** ACCEPT or REJECT with brief reasoning (50-100 words)."""
 
         try:
             llm_result = await self.llm_client.extract(
                 prompt=prompt,
                 response_model=FilterResult,
-                system_prompt="You are a strict AI Security research curator. Apply Pareto 80/20 rule - only accept top-tier relevant papers.",
+                system_prompt="You are an AI Security research assistant helping researchers stay up-to-date. When in doubt, prefer ACCEPT over REJECT.",
                 temperature=0.0
             )
             

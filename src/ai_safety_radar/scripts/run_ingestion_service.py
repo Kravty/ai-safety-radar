@@ -21,8 +21,8 @@ def get_filter_agent():
     """Lazy initialization of FilterAgent."""
     global _filter_agent
     if _filter_agent is None:
-        llm_client = LLMClient()  # Uses instructor + litellm with env vars
-        _filter_agent = FilterAgent(llm_client)
+        filter_client = LLMClient(role="filter")  # Uses gpt-5-nano for filtering
+        _filter_agent = FilterAgent(filter_client)
         logger.info("✅ FilterAgent initialized with LLM")
     return _filter_agent
 

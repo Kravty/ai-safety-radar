@@ -48,7 +48,7 @@ class ThreatSignature(BaseModel):
                 return v
             return 1
         return 1
-    summary_tldr: str = Field(..., max_length=280)
+    summary_tldr: str = Field(..., max_length=500)
     
     # NEW FIELDS for Research Monitor
     summary_detailed: str = Field(

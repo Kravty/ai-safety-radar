@@ -231,4 +231,4 @@ flowchart LR
 
 - [OWASP LLM Top 10](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
 - [Docker Security Best Practices](https://docs.docker.com/develop/security-best-practices/)
-- [Redis Security](https://redis.io/docs/management/security/)
+- [Redis Security](https://redis.io/docs/latest/operate/rs/security/)

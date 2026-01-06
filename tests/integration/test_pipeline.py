@@ -95,10 +95,11 @@ async def test_end_to_end_pipeline_flow(mock_redis):
             url=doc_received.url,
             # Fill missing fields
             relevance_score=1.0,
-            attack_type="Jailbreak", 
+            attack_type="Jailbreak",
             modality=["Text"],
             is_theoretical=False,
             summary_tldr="TLDR",
+            summary_detailed="Detailed summary of the threat analysis",
             source=doc_received.source
         )
         

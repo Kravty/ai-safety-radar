@@ -112,6 +112,50 @@ class TestMLSecurityFilter:
         assert result["status"] == "ACCEPT"
         assert result["score"] >= 50
         print(f"✅ Adversarial robustness paper: score={result['score']}, reasons={result['reasons']}")
+    
+    def test_unicode_handling(self):
+        """Filter should handle non-ASCII characters."""
+        result = self.filter.evaluate(
+            "Universal Jailbreak via 对抗 Suffixes",
+            "We propose adversarial attacks on LLMs using émojis 🚀 and unicode characters."
+        )
+        assert result["score"] > 0
+        print(f"✅ Unicode paper: score={result['score']}")
+    
+    def test_very_short_abstract(self):
+        """Filter should handle short abstracts."""
+        result = self.filter.evaluate(
+            "Adversarial Attack",
+            "Jailbreak study"  # Only 2 words
+        )
+        # Should still score based on keywords
+        assert result["score"] > 0
+        print(f"✅ Short abstract: score={result['score']}")
+    
+    def test_very_long_text(self):
+        """Filter should handle very long texts."""
+        long_abstract = "adversarial attack " * 500  # Very long
+        result = self.filter.evaluate(
+            "Large Scale Adversarial Study",
+            long_abstract
+        )
+        assert result["score"] > 0
+        print(f"✅ Long text: score={result['score']}")
+    
+    def test_case_insensitive_matching(self):
+        """Keywords should match case-insensitively."""
+        result1 = self.filter.evaluate(
+            "ADVERSARIAL ATTACK",
+            "JAILBREAK STUDY"
+        )
+        result2 = self.filter.evaluate(
+            "adversarial attack",
+            "jailbreak study"
+        )
+        # Both should have similar high scores (>= 50)
+        assert result1["score"] >= 50
+        assert result2["score"] >= 50
+        print(f"✅ Case insensitive: uppercase={result1['score']}, lowercase={result2['score']}")
 
 
 # Run: pytest tests/agents/test_filter_logic.py -v -s

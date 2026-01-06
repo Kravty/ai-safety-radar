@@ -79,8 +79,8 @@ class TestFilterAgent:
     async def test_accept_security_paper(self, filter_agent):
         """FilterAgent should ACCEPT security-focused papers."""
         result = await filter_agent.analyze(
-            title="Towards Provably Secure Generative AI: Reliable Consensus Sampling",
-            abstract="We present a framework for ensuring security guarantees in generative AI systems."
+            title="Adversarial Attacks on Secure Generative AI Systems",
+            abstract="We present adversarial attack methods against security defenses in generative AI systems, demonstrating vulnerabilities in current robustness mechanisms."
         )
         
         assert result.is_relevant == True, f"Should accept security paper. Reasoning: {result.reasoning}"
