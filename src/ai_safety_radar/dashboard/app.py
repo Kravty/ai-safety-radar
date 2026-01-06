@@ -158,7 +158,6 @@ def setup_sidebar():
     # =========================================
     # PRIMARY: System Status (always visible)
     # =========================================
-    st.sidebar.markdown("### 🎯 System Status")
     
     if not r_client:
         st.sidebar.error("🔴 **Disconnected**")
@@ -169,28 +168,21 @@ def setup_sidebar():
     metrics = get_queue_metrics(r_client)
     emoji, status_text, _ = get_queue_status(metrics)
     
-    # Status indicator: Large, bold, colored
+    # Status indicator: Full-width colored box
     if status_text == "Complete":
-        st.sidebar.success(f"## {emoji} {status_text}")
+        st.sidebar.success(f"✅ All systems operational")
     elif status_text == "Processing":
-        st.sidebar.warning(f"## {emoji} {status_text}")
+        st.sidebar.info(f"🔄 Processing papers...")
     else:  # Stuck
-        st.sidebar.error(f"## {emoji} {status_text}")
+        st.sidebar.error(f"⚠️ System needs attention")
     
-    # Key metric: Threats Analyzed (prominent)
-    st.sidebar.metric(
-        label="Threats Analyzed",
-        value=metrics['analyzed_count'],
-        help="Papers successfully processed by the analysis pipeline"
-    )
+    # HERO METRIC: Threats Analyzed (largest element)
+    st.sidebar.markdown("#### Threats Analyzed")
+    st.sidebar.markdown(f"# **{metrics['analyzed_count']}**")
     
     # Show pending only if non-zero (actionable info)
     if metrics['lag'] > 0:
-        st.sidebar.metric(
-            label="Pending Analysis",
-            value=metrics['lag'],
-            help="Papers accepted by filter, waiting for agent_core"
-        )
+        st.sidebar.warning(f"⏳ {metrics['lag']} papers pending analysis")
     
     st.sidebar.markdown("---")
     
@@ -198,25 +190,23 @@ def setup_sidebar():
     # SECONDARY: Queue Details (collapsible)
     # =========================================
     with st.sidebar.expander("📊 Queue Details", expanded=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric(
-                "Pending",
-                metrics['lag'],
-                help="Awaiting analysis"
-            )
-        with col2:
-            st.metric(
-                "Total Queued",
-                metrics['stream_length'],
-                help="All papers ever queued (historical)"
-            )
+        # Vertical layout to avoid truncation
+        st.metric(
+            "Pending",
+            metrics['lag'],
+            help="Papers awaiting analysis"
+        )
+        st.metric(
+            "Historical",
+            metrics['stream_length'],
+            help="All papers ever queued"
+        )
         
         # Warning if stuck
         if metrics['in_flight'] > 0:
             idle_mins = metrics['oldest_pending_ms'] / 60000
             if idle_mins > 10:
-                st.warning(f"⚠️ {metrics['in_flight']} items stuck for {idle_mins:.0f} min")
+                st.warning(f"⚠️ {metrics['in_flight']} stuck ({idle_mins:.0f}m)")
             else:
                 st.info(f"🔄 {metrics['in_flight']} in progress")
     
@@ -224,26 +214,24 @@ def setup_sidebar():
     # TERTIARY: Advanced Debugging (collapsed)
     # =========================================
     with st.sidebar.expander("🔧 Advanced", expanded=False):
-        st.caption("Redis stream internals (for debugging)")
+        st.caption("Redis internals")
         st.json({
-            "consumer_lag": metrics['lag'],
-            "in_flight_unacked": metrics['in_flight'],
-            "stream_length": metrics['stream_length'],
-            "last_heartbeat": metrics['last_processed_ts'] or "N/A",
-            "last_doc_id": metrics['last_processed_id'] or "N/A"
+            "lag": metrics['lag'],
+            "in_flight": metrics['in_flight'],
+            "stream_len": metrics['stream_length'],
+            "heartbeat": metrics['last_processed_ts'] or "N/A"
         })
         
-        # Maintenance actions (hidden in advanced)
+        # Maintenance
         st.markdown("---")
-        st.caption("Maintenance")
-        trim_count = st.number_input("Keep last N messages", min_value=10, max_value=1000, value=100, key="trim_input")
-        if st.button("Trim Queue History", help="Remove old processed messages from stream"):
+        trim_count = st.number_input("Keep last N", min_value=10, max_value=1000, value=100, key="trim_input")
+        if st.button("Trim History", use_container_width=True):
             try:
                 trimmed = r_client.xtrim("papers:pending", maxlen=trim_count, approximate=True)
-                st.success(f"Trimmed {trimmed} messages")
+                st.success(f"Trimmed {trimmed}")
                 st.rerun()
             except Exception as e:
-                st.error(f"Trim failed: {e}")
+                st.error(f"Failed: {e}")
     
     st.sidebar.markdown("---")
     
@@ -252,27 +240,30 @@ def setup_sidebar():
     # =========================================
     st.sidebar.markdown("### ⚡ Actions")
     
+    # Primary actions (identical sizing via sidebar columns + sidebar buttons)
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        if st.button("📥 Ingest", help="Fetch latest papers from ArXiv", use_container_width=True):
+        if st.sidebar.button("📥 Ingest", help="Fetch papers", use_container_width=True):
             r_client.publish("agent:trigger", "ingest")
             st.sidebar.success("✅ Started")
     with col2:
-        if st.button("⚙️ Process", help="Process pending papers", use_container_width=True):
+        if st.sidebar.button("⚙️ Process", help="Analyze queue", use_container_width=True):
             r_client.publish("agent:trigger", "process_all")
             st.sidebar.success("✅ Started")
     
-    if st.sidebar.button("🔄 Refresh", help="Reload dashboard data", use_container_width=True):
+    # Secondary action (full width)
+    if st.sidebar.button("🔄 Refresh Data", help="Reload dashboard", use_container_width=True):
         st.rerun()
     
-    # Danger zone (extra confirmation)
+    st.sidebar.markdown("---")
+    
+    # Danger zone (isolated)
     with st.sidebar.expander("⚠️ Danger Zone", expanded=False):
-        st.caption("Destructive actions - use with caution")
-        if st.button("🗑️ Clear All Data", use_container_width=True):
-            if st.checkbox("I understand this deletes all analyzed threats"):
+        st.warning("This will delete all data")
+        if st.checkbox("I understand", key="confirm_delete"):
+            if st.button("🗑️ Clear All", use_container_width=True):
                 r_client.delete("papers:analyzed")
                 r_client.delete("curator:latest_summary")
-                st.warning("Data cleared")
                 st.rerun()
 
 # --- Main App Entry Point ---
@@ -334,7 +325,7 @@ def main():
                     lag_val = groups[0].get('lag', 0) or 0
             except:
                 pass
-        col2.metric("Remaining (lag)", lag_val)
+        col2.metric("Pending", lag_val, help="Papers awaiting analysis")
         col3.metric("Critical Risks", critical)
         
         st.markdown("---")
