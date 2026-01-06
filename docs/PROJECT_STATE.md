@@ -275,6 +275,7 @@ uv run pytest tests/ -v
 | Metric | Typical Value |
 |--------|---------------|
 | Acceptance rate | 35-40% |
-| Processing time | ~30s/paper |
-| Backfill (200 papers) | ~15 min |
-| Cost (200 papers) | ~$0.05 |
+| Processing time | See [PERFORMANCE.md](PERFORMANCE.md) |
+| Total project spend | $0.67 (measured Jan 2026) |
+
+> For detailed timing and cost data, see [PERFORMANCE.md](PERFORMANCE.md).

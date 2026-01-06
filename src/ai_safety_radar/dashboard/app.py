@@ -53,28 +53,95 @@ def get_stream_data(redis_client, stream_key, count=100):
         logging.error(f"Stream read error: {e}")
         return []
 
-def get_agent_status_display(redis_client):
+def get_queue_metrics(redis_client):
     """
-    Get agent status mapped to Status Reference legend.
+    Get detailed queue metrics with correct semantics.
     
     Returns:
-        tuple: (emoji, status_text, pending_count, analyzed_count)
+        dict with keys:
+        - stream_length: Total messages in stream (historical)
+        - lag: Messages not yet delivered to consumer group
+        - in_flight: Messages delivered but not ACKed
+        - oldest_pending_ms: Idle time of oldest unacked message
+        - analyzed_count: Total in papers:analyzed
+        - last_processed_id: Last doc processed by agent_core
+        - last_processed_ts: Timestamp of last processing
     """
+    metrics = {
+        'stream_length': 0,
+        'lag': 0,
+        'in_flight': 0,
+        'oldest_pending_ms': 0,
+        'analyzed_count': 0,
+        'last_processed_id': None,
+        'last_processed_ts': None,
+    }
+    
     if not redis_client:
-        return "🔴", "Error: Redis not connected", 0, 0
+        return metrics
     
     try:
-        pending_count = redis_client.xlen("papers:pending") or 0
-        analyzed_count = redis_client.xlen("papers:analyzed") or 0
+        # Stream length (historical)
+        metrics['stream_length'] = redis_client.xlen("papers:pending") or 0
+        metrics['analyzed_count'] = redis_client.xlen("papers:analyzed") or 0
         
-        if pending_count > 0:
-            # Papers in queue → Processing (yellow per Status Reference)
-            return "🟡", f"Processing", pending_count, analyzed_count
-        else:
-            # Queue empty → Idle (gray per Status Reference)
-            return "⚪", "Idle", pending_count, analyzed_count
+        # Get consumer group info for lag
+        try:
+            groups = redis_client.xinfo_groups("papers:pending")
+            for g in groups:
+                if g.get('name') == 'agent_group':
+                    metrics['lag'] = g.get('lag', 0) or 0
+                    break
+        except redis.ResponseError:
+            pass  # No consumer group exists
+        
+        # Get pending (in-flight) messages
+        try:
+            pending_info = redis_client.xpending("papers:pending", "agent_group")
+            if pending_info:
+                metrics['in_flight'] = pending_info.get('pending', 0) or 0
+                # Get oldest pending idle time
+                if metrics['in_flight'] > 0:
+                    pending_details = redis_client.xpending_range(
+                        "papers:pending", "agent_group", "-", "+", 1
+                    )
+                    if pending_details:
+                        metrics['oldest_pending_ms'] = pending_details[0].get('time_since_delivered', 0)
+        except redis.ResponseError:
+            pass  # No consumer group or no pending
+        
+        # Get heartbeat from agent_core
+        metrics['last_processed_id'] = redis_client.get("agent_core:last_doc_id")
+        metrics['last_processed_ts'] = redis_client.get("agent_core:last_processed_ts")
+        
     except Exception as e:
-        return "🔴", f"Error: {str(e)}", 0, 0
+        logging.error(f"Error getting queue metrics: {e}")
+    
+    return metrics
+
+
+def get_queue_status(metrics):
+    """
+    Determine queue status based on metrics.
+    
+    Returns:
+        tuple: (emoji, status_text, color)
+        - Green: lag=0, in_flight=0 (complete)
+        - Yellow: lag>0 or in_flight>0 (processing)
+        - Red: in_flight>0 and oldest_pending_ms > 10min (stuck)
+    """
+    STUCK_THRESHOLD_MS = 10 * 60 * 1000  # 10 minutes
+    
+    lag = metrics.get('lag', 0)
+    in_flight = metrics.get('in_flight', 0)
+    oldest_ms = metrics.get('oldest_pending_ms', 0)
+    
+    if in_flight > 0 and oldest_ms > STUCK_THRESHOLD_MS:
+        return "🔴", "Stuck", "red"
+    elif lag > 0 or in_flight > 0:
+        return "🟡", "Processing", "yellow"
+    else:
+        return "🟢", "Complete", "green"
 
 # --- Sidebar Setup ---
 def setup_sidebar():
@@ -95,32 +162,40 @@ def setup_sidebar():
     else:
         st.sidebar.markdown("🔴 **Redis:** Disconnected")
         
-    # Agent Core Status with consistent legend mapping
+    # Queue Metrics with correct semantics
     if r_client:
-        emoji, status_text, pending, analyzed = get_agent_status_display(r_client)
-        st.sidebar.markdown(f"{emoji} **Agent Core:** {status_text}")
+        metrics = get_queue_metrics(r_client)
+        emoji, status_text, color = get_queue_status(metrics)
         
-        # Queue Metrics Summary
-        st.sidebar.markdown(f"📊 **Queue:** {pending} pending, {analyzed} analyzed")
+        st.sidebar.markdown(f"{emoji} **Queue Status:** {status_text}")
+        
+        # Detailed queue metrics
+        st.sidebar.markdown(f"""        
+**Stream length (historical):** {metrics['stream_length']}  
+**Remaining to process (lag):** {metrics['lag']}  
+**In-flight (unacked):** {metrics['in_flight']}  
+**Analyzed total:** {metrics['analyzed_count']}
+        """)
+        
+        # Heartbeat info
+        if metrics['last_processed_ts']:
+            st.sidebar.caption(f"Last processed: {metrics['last_processed_ts']}")
     else:
-        st.sidebar.markdown("⚪ **Agent Core:** Unknown")
-        st.sidebar.markdown("📊 **Queue:** - pending, - analyzed")
+        st.sidebar.markdown("⚪ **Queue Status:** Unknown")
     
     # Status Reference (clean markdown)
     with st.sidebar.expander("ℹ️ Status Reference"):
         st.markdown("""
-**Redis Connection:**
-- 🟢 Connected: Database operational
-- 🔴 Disconnected: Service down
+**Queue Status:**
+- 🟢 Complete: lag=0, in_flight=0
+- 🟡 Processing: lag>0 or in_flight>0
+- 🔴 Stuck: in_flight>0 for >10 minutes
 
-**Agent Core:**
-- 🟡 Processing: Actively analyzing papers
-- ⚪ Idle: Queue empty, no work
-- 🔴 Error: Connection or processing failure
-
-**Queue:**
-- Pending: Awaiting analysis
-- Analyzed: Completed papers
+**Metrics Explained:**
+- **Stream length**: Total messages ever (historical)
+- **Lag**: Messages not yet delivered to consumer
+- **In-flight**: Delivered but not acknowledged
+- **Analyzed**: Successfully processed papers
         """)
         
     st.sidebar.markdown("---")
@@ -143,6 +218,18 @@ def setup_sidebar():
                 r_client.delete("curator:latest_summary")
                 st.sidebar.warning("⚠️ Cleared")
                 st.rerun()
+        
+        # Maintenance: Trim processed history
+        with st.sidebar.expander("🔧 Maintenance"):
+            st.caption("Trim old messages from streams (keeps recent N)")
+            trim_count = st.number_input("Keep last N messages", min_value=10, max_value=1000, value=100)
+            if st.button("Trim papers:pending", help="Remove old processed messages"):
+                try:
+                    trimmed = r_client.xtrim("papers:pending", maxlen=trim_count, approximate=True)
+                    st.success(f"Trimmed {trimmed} messages")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Trim failed: {e}")
     else:
         st.sidebar.error("Controls disabled (No Redis)")
 
@@ -196,7 +283,16 @@ def main():
             critical = len(df[df['severity'].isin(['Critical', 'High', '4', '5'])])
             
         col1.metric("Total Threats", total)
-        col2.metric("Pending Ingestion", pending_len)
+        # Get lag safely
+        lag_val = 0
+        if r_client:
+            try:
+                groups = r_client.xinfo_groups("papers:pending")
+                if groups:
+                    lag_val = groups[0].get('lag', 0) or 0
+            except:
+                pass
+        col2.metric("Remaining (lag)", lag_val)
         col3.metric("Critical Risks", critical)
         
         st.markdown("---")

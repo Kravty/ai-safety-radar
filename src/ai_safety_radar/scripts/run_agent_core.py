@@ -513,6 +513,10 @@ async def main():
                             logger.info(f"✅ ACKed message {msg_id}")
                             processed_count += 1
                             
+                            # Update heartbeat for dashboard
+                            await redis_client.client.set("agent_core:last_doc_id", doc.id)
+                            await redis_client.client.set("agent_core:last_processed_ts", datetime.utcnow().isoformat())
+                            
                             # Trigger Curator every 5 papers
                             if processed_count % 5 == 0:
                                 logger.info(f"🎯 Triggering Curator after {processed_count} papers")

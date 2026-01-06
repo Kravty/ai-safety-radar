@@ -85,7 +85,7 @@ printf "sk-..." | podman secret create openai_api_key -
 
 | Model | Role | Rationale |
 |-------|------|-----------|
-| gpt-5-nano | FilterAgent | Fast, cheap (~$0.0001/paper) |
+| gpt-5-nano | FilterAgent | Fast, ~11s p50 (see [PERFORMANCE.md](PERFORMANCE.md)) |
 | gpt-5-mini | Extraction/Critic/Curator | Higher quality for structured output |
 
 **Config priority:** Environment vars > `config.yaml` > code defaults
@@ -140,9 +140,9 @@ podman exec ai-safety-radar_redis_1 redis-cli PUBLISH agent:trigger ingest
 |--------|-------|
 | Papers fetched | 200 |
 | Papers accepted | 77 (38.5%) |
-| Papers analyzed | 35+ |
-| Duration | 15 minutes |
-| Estimated cost | ~$0.05 |
+| Papers analyzed | 74 |
+| Duration | See [PERFORMANCE.md](PERFORMANCE.md) |
+| Total project spend | $0.67 (measured Jan 2026) |
 
 ### Filter Accuracy
 

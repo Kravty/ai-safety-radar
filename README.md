@@ -162,7 +162,7 @@ podman exec -it ai-safety-radar_ingestion_service_1 \
 #   Duration:        ~15 minutes
 ```
 
-**Cost estimate:** ~$0.05 for 200 papers with gpt-5-nano/mini
+**Cost:** Project spend so far: $0.67 (see [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for details)
 
 ## Troubleshooting
 
