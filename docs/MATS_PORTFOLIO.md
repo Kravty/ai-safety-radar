@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-AI security researchers face information overload: hundreds of papers published weekly on ArXiv, with only ~20% directly relevant to adversarial ML, jailbreaks, or alignment. Manual scanning is unsustainable.
+AI security researchers face information overload: hundreds of papers published weekly on ArXiv, with small subset directly relevant to adversarial ML, jailbreaks, or alignment. Manual scanning is unsustainable.
 
 **Goal:** Build an autonomous system that filters, analyzes, and synthesizes AI security research into actionable weekly digests.
 
@@ -194,7 +194,7 @@ This project supports AI Safety research infrastructure:
 
 ```bash
 # Clone
-git clone https://github.com/your-username/ai-safety-radar.git
+git clone https://github.com/Kravty/ai-safety-radar.git
 cd ai-safety-radar
 
 # Create secret

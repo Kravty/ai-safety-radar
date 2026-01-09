@@ -1,4 +1,8 @@
-# AI Safety Radar
+# 🛡️ AI Safety Radar
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+
 
 An autonomous threat intelligence engine that monitors, filters, and analyzes AI security research from ArXiv.
 
@@ -70,7 +74,7 @@ flowchart TB
 ### 1. Clone and Configure
 
 ```bash
-git clone https://github.com/your-username/ai-safety-radar.git
+git clone https://github.com/Kravty/ai-safety-radar.git
 cd ai-safety-radar
 ```
 

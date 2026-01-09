@@ -177,8 +177,9 @@ def setup_sidebar():
         st.sidebar.error(f"⚠️ System needs attention")
     
     # HERO METRIC: Threats Analyzed (largest element)
-    st.sidebar.markdown("#### Threats Analyzed")
+    st.sidebar.markdown("### Threats Analyzed")
     st.sidebar.markdown(f"# **{metrics['analyzed_count']}**")
+    st.sidebar.caption(f"Last updated: {datetime.now().strftime('%H:%M')}")
     
     # Show pending only if non-zero (actionable info)
     if metrics['lag'] > 0:
