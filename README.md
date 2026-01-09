@@ -15,6 +15,13 @@ An autonomous threat intelligence engine that monitors, filters, and analyzes AI
 - **Security-First** — Air-gapped agent core, least-privilege containers
 - **Backfill Tool** — One-command historical data population
 
+
+## 🎥 Quick Demo
+https://github.com/user-attachments/assets/eebf8fd8-4105-4f00-9f9f-fa7435eb65b4
+
+*Dashboard and project overview*
+
+
 ## Architecture
 
 ```mermaid
