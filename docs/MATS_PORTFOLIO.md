@@ -194,7 +194,7 @@ This project supports AI Safety research infrastructure:
 
 ```bash
 # Clone
-git clone https://github.com/[ANONYMIZED]/ai-safety-radar.git
+git clone https://github.com/Kravty/ai-safety-radar.git
 cd ai-safety-radar
 
 # Create secret
