@@ -81,7 +81,7 @@ flowchart TB
 ### 1. Clone and Configure
 
 ```bash
-git clone https://github.com/Kravty/ai-safety-radar.git
+git clone https://github.com/[ANONYMIZED]/ai-safety-radar.git
 cd ai-safety-radar
 ```
 
